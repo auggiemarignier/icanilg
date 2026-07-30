@@ -1,6 +1,8 @@
 """Solve the IC anisotropy problem modelled as a purely linear gaussian system."""
 
+import datetime
 import logging
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -214,9 +216,27 @@ def construct_Cd(ref_phase: pd.Series, ic_tt: pd.Series) -> np.ndarray:
     return np.diag((ref_phase.map(noise_levels) / ic_tt).astype(float).to_numpy())
 
 
+ROOT = Path(__file__).parent.resolve()
+
+
+def save(mean: np.ndarray, cov: np.ndarray, ev: float, fname: str = "") -> None:
+    """Save the mean and covariance in numpy files, and the evidence in a txt files.
+
+    fname is an optional string to prepend to the file names, for example a brief description of choices made for the inversion.
+    """
+    outdir = ROOT / "outputs" / datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    outdir.mkdir(parents=True, exist_ok=False)
+    if fname:
+        fname += "_"
+    np.save(outdir / (fname + "mean"), mean)
+    np.save(outdir / (fname + "cov"), cov)
+    with open(outdir / (fname + "evidence.txt"), "w") as f:
+        f.write(str(ev))
+
+
 def main():
 
-    data_file = "data/brett2024_ic_traveltimes.parquet"
+    data_file = ROOT / "data" / "brett2024_ic_traveltimes.parquet"
     logger.info("Reading data from %s", data_file)
     df = pd.read_parquet(data_file)
     data = (df.delta_t / df.inner_core_travel_time).astype(float).to_numpy()
@@ -248,6 +268,7 @@ def main():
         )
     ]
 
+
     logger.info(
         "Running inference: prior cov shape=%s noise cov shape=%s",
         inferred[0].C.shape,
@@ -260,6 +281,9 @@ def main():
     logger.info("Posterior mean shape: %s", mp.shape)
     Zp = calc_log_evidence(data, inferred, nuisance)
     logger.info("Log-evidence: %s", Zp)
+
+    save(mp, Cp, Zp, "R4L5")
+    logger.info("Saved")
 
 
 if __name__ == "__main__":
