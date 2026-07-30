@@ -1,5 +1,6 @@
 """Solve the IC anisotropy problem modelled as a purely linear gaussian system."""
 
+import argparse
 import datetime
 import logging
 from pathlib import Path
@@ -7,7 +8,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from linear_gaussian import (
-    GaussianComponent,
     calc_log_evidence,
     calc_posterior_cov,
     calc_posterior_mean,
@@ -20,11 +20,15 @@ from tti.elastic.voigt import (
     gradient_C_wrt_L,
     gradient_C_wrt_N,
 )
-from tti.traveltimes.parametrisations import LinearParametriser
 from tti.traveltimes.traveltimes import (
     calculate_path_direction_vector,
     calculate_relative_traveltime_voigt,
 )
+
+from config import load_config, save_resolved_config
+from config.builders import make_builder
+from config.components import register_builder
+from config.models import config_to_json_dict
 
 # basic module logger
 logging.basicConfig(
@@ -197,10 +201,22 @@ def construct_Cd(ref_phase: pd.Series, ic_tt: pd.Series) -> np.ndarray:
     return np.diag((ref_phase.map(noise_levels) / ic_tt).astype(float).to_numpy())
 
 
+register_builder("main:build_forward", make_builder(construct_forward_map))
+register_builder("main:build_Cd", make_builder(construct_Cd))
+
+# small helpers for priors
+register_builder("main:eye", make_builder(lambda n_data: np.eye(n_data)))
+register_builder(
+    "main:prior_cov", make_builder(lambda n_params: 10.0 * np.eye(n_params))
+)
+register_builder("main:prior_mean", make_builder(lambda n_params: np.zeros(n_params)))
+register_builder("main:noise_mean", make_builder(lambda n_data: np.zeros(n_data)))
+
+
 ROOT = Path(__file__).parent.resolve()
 
 
-def save(mean: np.ndarray, cov: np.ndarray, ev: float, fname: str = "") -> None:
+def save(mean: np.ndarray, cov: np.ndarray, ev: float, fname: str = "") -> Path:
     """Save the mean and covariance in numpy files, and the evidence in a txt files.
 
     fname is an optional string to prepend to the file names, for example a brief description of choices made for the inversion.
@@ -213,11 +229,22 @@ def save(mean: np.ndarray, cov: np.ndarray, ev: float, fname: str = "") -> None:
     np.save(outdir / (fname + "cov"), cov)
     with open(outdir / (fname + "evidence.txt"), "w") as f:
         f.write(str(ev))
+    return outdir
 
 
 def main():
+    """Run an inversion based on a given config file."""
+    parser = argparse.ArgumentParser(
+        description="Run IC anisotropy inference from a config file"
+    )
+    parser.add_argument(
+        "--config", "-c", default=str(ROOT / "experiments" / "default.toml")
+    )
+    args = parser.parse_args()
 
-    data_file = ROOT / "data" / "brett2024_ic_traveltimes.parquet"
+    cfg = load_config(Path(args.config))
+
+    data_file = Path(cfg.data.file)
     logger.info("Reading data from %s", data_file)
     df = pd.read_parquet(data_file)
     data = (df.delta_t / df.inner_core_travel_time).astype(float).to_numpy()
@@ -232,23 +259,18 @@ def main():
         ic_out.shape,
     )
 
-    mesh = SphericalMesh(1221.5, 4, 5)
+    mesh = cfg.mesh.to_mesh()
     weights = determine_weights(mesh, ic_in, path_directions)
 
-    logger.info("Constructing forward matrix A")
-    A = construct_forward_map(path_directions, weights)
-    n_data, n_params = A.shape
-    logger.info("Forward matrix A shape: %s", A.shape)
-
-    inferred = [GaussianComponent(A, np.zeros(n_params), 10.0 * np.eye(n_params))]
-    nuisance = [
-        GaussianComponent(
-            np.eye(n_data),
-            np.zeros(n_data),
-            construct_Cd(df.reference_phase, df.inner_core_travel_time),
-        )
-    ]
-
+    context = {  # all the arguments to constructors only known at runtime
+        "n_params": mesh.n_cells * 3,
+        "n_data": data.size,
+        "path_directions": path_directions,
+        "weights": weights,
+        "ref_phase": df.reference_phase,
+        "ic_tt": df.inner_core_travel_time,
+    }
+    inferred, nuisance = cfg.components.to_gaussian_components(context=context)
 
     logger.info(
         "Running inference: prior cov shape=%s noise cov shape=%s",
@@ -263,8 +285,19 @@ def main():
     Zp = calc_log_evidence(data, inferred, nuisance)
     logger.info("Log-evidence: %s", Zp)
 
-    save(mp, Cp, Zp, "R4L5")
-    logger.info("Saved")
+    outdir = save(mp, Cp, Zp, cfg.output.prefix)
+
+    # save resolved configuration for provenance
+    resolved = {
+        "config": config_to_json_dict(cfg),
+        "derived": {
+            "n_data": int(context["n_data"]),
+            "n_params": int(context["n_params"]),
+            "mesh_n_cells": getattr(mesh, "n_cells", None),
+        },
+    }
+    save_resolved_config(outdir, resolved)
+    logger.info("Saved outputs and resolved config to %s", outdir)
 
 
 if __name__ == "__main__":

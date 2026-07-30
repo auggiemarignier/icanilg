@@ -1,0 +1,22 @@
+[data]
+file = "data/brett2024_ic_traveltimes.parquet"
+
+[mesh]
+radius = 1221.5
+radial_resolution = 4
+lateral_resolution = 5
+
+[components]
+
+[[components.inferred]]
+A = { builder = "main:build_forward", kwargs = {} }
+C = { builder = "main:prior_cov", kwargs = {} }
+mu = { builder = "main:prior_mean", kwargs = {} }
+
+[[components.nuisance]]
+A = { builder = "main:eye", kwargs = {} }
+C = { builder = "main:build_Cd", kwargs = {} }
+mu = { builder = "main:noise_mean", kwargs = {} }
+
+[output]
+prefix = "R4L5"
