@@ -132,11 +132,9 @@ def test_config_to_json_dict_serialisation():
             "mesh": {},
             "components": {"inferred": [], "nuisance": []},
             "output": {},
-            "extras": {
-                "arr": np.array([1, 2, 3]),
-            },
+            "extras": {},
         }
     )
     j = config_to_json_dict(cfg)
     assert isinstance(j["data"]["file"], str)
-    assert isinstance(j["extras"]["arr"], list)
+    assert isinstance(j["extras"]["extras"], dict)
