@@ -4,19 +4,19 @@ file = "data/brett2024_ic_traveltimes.parquet"
 [mesh]
 radius = 1221.5
 radial_resolution = 4
-lateral_resolution = 5
+lateral_resolution = 50
 
 [components]
 
 [[components.inferred]]
-A = { builder = "forward.build_forward", kwargs = { normalisation = 0.5 } }
-C = { builder = "prior.iid", kwargs = { scale = 0.1} }
+A = { builder = "main:build_forward", kwargs = {} }
+C = { builder = "prior.spherically_correlated", kwargs = { sigma2 = 0.1, lat_corr_length = 30, rad_corr_length = 300 } }
 mu = { builder = "main:prior_mean", kwargs = {} }
 
 [[components.nuisance]]
 A = { builder = "main:eye", kwargs = {} }
-C = { builder = "main:build_Cd", kwargs = {} }
+C = { builder = "noise:correlated_paths", kwargs = { corr_length = 5 } }
 mu = { builder = "main:noise_mean", kwargs = {} }
 
 [output]
-prefix = "R4L5"
+prefix = "outputs/correlated"

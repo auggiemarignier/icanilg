@@ -30,6 +30,12 @@ from config import load_config, save_resolved_config
 from config.builders import make_builder
 from config.components import register_builder
 from config.models import config_to_json_dict
+from utils import (
+    block_iid,
+    correlated_paths,
+    iid,
+    spherically_correlated_independent_anisotropy,
+)
 
 # basic module logger
 logging.basicConfig(
@@ -186,29 +192,15 @@ def construct_forward_map(
     return M
 
 
-def construct_Cd(ref_phase: pd.Series, ic_tt: pd.Series) -> np.ndarray:
-    """
-    The noise levels for each reference phase are given in seconds, so we need to convert them to fractional traveltime perturbations by dividing by the inner core travel time.
-
-    In principle this gives a different sigma for each observation.
-    """
-
-    noise_levels: dict[str, float] = {
-        "ab": 0.95,
-        "bc": 0.63,
-        "cd": 0.29,
-        "df": 0.95,
-    }
-    return np.diag((ref_phase.map(noise_levels) / ic_tt).astype(float).to_numpy())
-
-
 register_builder("main:build_forward", make_builder(construct_forward_map))
-register_builder("main:build_Cd", make_builder(construct_Cd))
+register_builder("noise:block_iid", make_builder(block_iid))
+register_builder("noise:correlated_paths", make_builder(correlated_paths))
 
-# small helpers for priors
 register_builder("main:eye", make_builder(lambda n_data: np.eye(n_data)))
+register_builder("prior.iid", make_builder(iid))
 register_builder(
-    "main:prior_cov", make_builder(lambda n_params: 10.0 * np.eye(n_params))
+    "prior.spherically_correlated",
+    make_builder(spherically_correlated_independent_anisotropy),
 )
 register_builder("main:prior_mean", make_builder(lambda n_params: np.zeros(n_params)))
 register_builder("main:noise_mean", make_builder(lambda n_data: np.zeros(n_data)))
@@ -257,8 +249,8 @@ def main():
     logger.info("Reading data from %s", data_file)
     df = pd.read_parquet(data_file)
     data = (df.delta_t / df.inner_core_travel_time).astype(float).to_numpy()
-    ic_in = np.stack(df.in_location.values)
-    ic_out = np.stack(df.out_location.values)
+    ic_in = np.stack(df.in_location.tolist())
+    ic_out = np.stack(df.out_location.tolist())
     path_directions = calculate_path_direction_vector(ic_in, ic_out)
 
     logger.debug(
@@ -275,9 +267,12 @@ def main():
         "n_params": mesh.n_cells * 3,
         "n_data": data.size,
         "path_directions": path_directions,
+        "ic_in": ic_in,
+        "ic_out": ic_out,
         "weights": weights,
-        "ref_phase": df.reference_phase,
-        "ic_tt": df.inner_core_travel_time,
+        "ref_phase": df.reference_phase.to_list(),
+        "ic_tt": df.inner_core_travel_time.astype(float).to_numpy(),
+        "mesh": mesh,
     }
     inferred, nuisance = cfg.components.to_gaussian_components(context=context)
 

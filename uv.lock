@@ -1174,7 +1174,7 @@ wheels = [
 [[package]]
 name = "linear-gaussian"
 version = "0.1.0"
-source = { git = "https://github.com/auggiemarignier/bmcmethods.git?subdirectory=packages%2Flinear_gaussian#23f2c2482cafc77279da51f08305ab0fcc95c564" }
+source = { git = "https://github.com/auggiemarignier/bmcmethods.git?subdirectory=packages%2Flinear_gaussian#e49d0719c91f89bf5ee76afaa88cbf1fb3bc925d" }
 dependencies = [
     { name = "numpy" },
 ]
