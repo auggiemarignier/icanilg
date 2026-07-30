@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 import numpy as np
 from raytracer import SphericalMesh
@@ -40,6 +40,7 @@ class MeshDict(TypedDict, total=False):
     radius: float
     radial_resolution: int
     lateral_resolution: int
+    sampling: str
 
 
 class ComponentsDict(TypedDict, total=False):
@@ -123,6 +124,7 @@ class MeshConfig:
     radius: float = 1221.5
     radial_resolution: int = 4
     lateral_resolution: int = 5
+    sampling: Literal["fib", "mw"] = "fib"
 
     @classmethod
     def from_dict(cls, d: MeshDict) -> MeshConfig:
@@ -130,17 +132,25 @@ class MeshConfig:
 
         Raises `ValueError` for invalid numeric values.
         """
+
         if d is None:
             d = {}
         radius = float(d.get("radius", 1221.5))
         radial = int(d.get("radial_resolution", 4))
         lateral = int(d.get("lateral_resolution", 5))
+        sampling = str(d.get("sampling", "fib"))
         # Basic validation
         if radius <= 0:
             raise ValueError("mesh.radius must be > 0")
         if radial < 1 or lateral < 1:
             raise ValueError("mesh resolutions must be >= 1")
-        return cls(radius=radius, radial_resolution=radial, lateral_resolution=lateral)
+
+        return cls(
+            radius=radius,
+            radial_resolution=radial,
+            lateral_resolution=lateral,
+            sampling=sampling,
+        )
 
     def to_mesh(self) -> SphericalMesh:
         """Construct a `SphericalMesh` instance from this config.
@@ -148,8 +158,18 @@ class MeshConfig:
         Returns:
             A `SphericalMesh` built with the configured parameters.
         """
+        from raytracer import FibonacciSphericalSampling, MWSphericalSampling
+
+        match self.sampling:
+            case "fib":
+                sampling = FibonacciSphericalSampling(self.lateral_resolution)
+            case "mw":
+                sampling = MWSphericalSampling(self.lateral_resolution)
+            case _:
+                raise ValueError(f"Invalid choice of sampling theorem {s}")
+
         return SphericalMesh(
-            self.radius, self.radial_resolution, self.lateral_resolution
+            self.radius, self.radial_resolution, sampling
         )
 
 

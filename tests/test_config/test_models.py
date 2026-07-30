@@ -25,6 +25,7 @@ def test_mesh_defaults():
     assert cfg.mesh.radius == 1221.5
     assert cfg.mesh.radial_resolution == 4
     assert cfg.mesh.lateral_resolution == 5
+    assert cfg.mesh.sampling == "fib"
 
 
 def test_components_resolution_basic():
