@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import logging
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -32,7 +33,7 @@ from config.models import config_to_json_dict
 
 # basic module logger
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -216,18 +217,26 @@ register_builder("main:noise_mean", make_builder(lambda n_data: np.zeros(n_data)
 ROOT = Path(__file__).parent.resolve()
 
 
-def save(mean: np.ndarray, cov: np.ndarray, ev: float, fname: str = "") -> Path:
+def save(
+    mean: np.ndarray, cov: np.ndarray, ev: float, outdir: Path | str | None = None
+) -> Path:
     """Save the mean and covariance in numpy files, and the evidence in a txt files.
 
-    fname is an optional string to prepend to the file names, for example a brief description of choices made for the inversion.
+    outdir is an optional root output directory.  Output files will be saved in a timestamped subdirectory.
+
+    Returns the full output directory path.
     """
-    outdir = ROOT / "outputs" / datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    if outdir is None:
+        outdir = ROOT / "outputs"
+    outdir = Path(outdir)
+
+    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    hex = uuid.uuid4().hex[:8]
+    outdir /= f"{now}_{hex}"
     outdir.mkdir(parents=True, exist_ok=False)
-    if fname:
-        fname += "_"
-    np.save(outdir / (fname + "mean"), mean)
-    np.save(outdir / (fname + "cov"), cov)
-    with open(outdir / (fname + "evidence.txt"), "w") as f:
+    np.save(outdir / "mean", mean)
+    np.save(outdir / "cov", cov)
+    with open(outdir / "evidence.txt", "w") as f:
         f.write(str(ev))
     return outdir
 
