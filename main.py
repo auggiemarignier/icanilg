@@ -34,25 +34,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class NoAnglesParametriser(LinearParametriser):
-    """Only P Love Parameters."""
-
-    n_model_params_per_segment = 3
-
-    transformation = np.array(
-        [
-            [1, 0, 0],
-            [0, 1, 0],
-            [0, 0, 1],
-            [0, 0, 0],
-            [0, 0, 0],
-            [0, 0, 0],
-            [0, 0, 0],
-        ],
-        dtype=float,
-    )
-
-
 def lonlatrad_to_xyz(lonlatrad: np.ndarray) -> np.ndarray:
     """Convert (lon, lat, radius) to Cartesian (x, y, z) coordinates.
 
@@ -123,7 +104,7 @@ def construct_forward_map(
     The input to the forward mapping is a stack of Love parameters, 3 (A,C,F) for each cell in the mesh.
 
     Combines various bits a pieces:
-    1) Add 0 shear components (L, N) to input vector, using the `transformation` in `NoAnglesParametriser`
+    1) Add 0 shear components (L, N) to input vector
     2) Mapping from a vector of elastic parameters to Voigt elastic tensor
         Making use of the derivative objects in `tti.elastic.voigt` a basis can be constructed
             basis = np.stack([dCdA, dCdC, dCdF, dCdL, dCdN], axis=0)
