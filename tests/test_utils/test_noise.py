@@ -5,8 +5,8 @@ import numpy as np
 from utils.noise import (
     compute_path_similarity,
     correlated_paths,
+    latlon_to_xyz,
     pairwise_angular_distance,
-    latlon_to_unit_vectors,
 )
 
 
@@ -50,8 +50,8 @@ def test_pairwise_angular_distance_is_symmetric() -> None:
     ic_in = np.array([in_lon, in_lat, in_rad]).T
 
     d = pairwise_angular_distance(
-        latlon_to_unit_vectors(ic_in[:, 1], ic_in[:, 0]),
-        latlon_to_unit_vectors(ic_in[:, 1], ic_in[:, 0]),
+        latlon_to_xyz(ic_in[:, 1], ic_in[:, 0]),
+        latlon_to_xyz(ic_in[:, 1], ic_in[:, 0]),
     )
     np.testing.assert_allclose(np.diag(d), np.zeros(100), atol=1e-15)
     np.testing.assert_allclose(d, d.T, atol=1e-15)

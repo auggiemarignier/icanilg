@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .geometry import latlon_to_unit_vectors, pairwise_angular_distance
+from .geometry import latlon_to_xyz, pairwise_angular_distance
 
 
 def block_iid(ref_phase: list[str], ic_tt: np.ndarray) -> np.ndarray:
@@ -26,8 +26,8 @@ def block_iid(ref_phase: list[str], ic_tt: np.ndarray) -> np.ndarray:
 
 def compute_path_similarity(ic_in: np.ndarray, ic_out: np.ndarray) -> np.ndarray:
     """Compute symmetric path-similarity matrix using great-circle spherical distances."""
-    E = latlon_to_unit_vectors(lat_deg=ic_in[:, 1], lon_deg=ic_in[:, 0])
-    X = latlon_to_unit_vectors(lat_deg=ic_out[:, 1], lon_deg=ic_out[:, 0])
+    E = latlon_to_xyz(lat_deg=ic_in[:, 1], lon_deg=ic_in[:, 0])
+    X = latlon_to_xyz(lat_deg=ic_out[:, 1], lon_deg=ic_out[:, 0])
 
     d_EE = pairwise_angular_distance(E, E)  # Entry_i to Entry_j (diag = 0.0)
     d_XX = pairwise_angular_distance(X, X)  # Exit_i to Exit_j   (diag = 0.0)

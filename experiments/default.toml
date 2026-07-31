@@ -15,8 +15,8 @@ mu = { builder = "main:prior_mean", kwargs = {} }
 
 [[components.nuisance]]
 A = { builder = "main:eye", kwargs = {} }
-C = { builder = "main:build_Cd", kwargs = {} }
+C = { builder = "noise:block_iid", kwargs = {} }
 mu = { builder = "main:noise_mean", kwargs = {} }
 
 [output]
-prefix = "R4L5"
+prefix = "outputs"
