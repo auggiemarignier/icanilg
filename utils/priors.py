@@ -46,7 +46,7 @@ def spherically_correlated(
         rad_corr_length: radial correlation length in km
     """
     theta, phi = mesh.sampling.sampling_points().T
-    phi = np.mod(phi + 0.5 * np.pi, np.pi) - 0.5 * np.pi  # ensure -pi/2 < phi < pi/2
+    phi = np.mod(phi + np.pi, 2 * np.pi) - np.pi  # ensure -pi < phi < pi
     rad = 0.5 * (mesh.radial_edges[:-1] + mesh.radial_edges[1:])  # get radial centres
 
     K_lat = _compute_lateral_covariance_kernel(
