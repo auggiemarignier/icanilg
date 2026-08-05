@@ -13,6 +13,7 @@ dependencies = [
     "jupyter>=1.1.1",
     "matplotlib>=3.11.1",
     "cartopy>=0.25.0",
+    "scipy>=1.18.0",
 ]
 
 [tool.uv.sources]
