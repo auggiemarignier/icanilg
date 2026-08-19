@@ -3,7 +3,6 @@
 import argparse
 import datetime
 import logging
-import uuid
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +11,8 @@ from linear_gaussian import (
     calc_log_evidence,
     calc_posterior_cov,
     calc_posterior_mean,
+    calc_posterior_predictive_cov,
+    calc_posterior_predictive_mean,
 )
 
 from config import load_config, save_resolved_config
@@ -25,6 +26,7 @@ from utils import (
     iid,
     spherically_correlated_independent_anisotropy,
 )
+from utils.distributions import Posterior, PosteriorPredictive
 
 # basic module logger
 logging.basicConfig(
@@ -48,31 +50,45 @@ register_builder("main:prior_mean", make_builder(lambda n_params: np.zeros(n_par
 register_builder("main:noise_mean", make_builder(lambda n_data: np.zeros(n_data)))
 
 
-ROOT = Path(__file__).parent.resolve()
+ROOT = Path(__file__).parent.parent.resolve()
 
 
 def save(
-    mean: np.ndarray, cov: np.ndarray, ev: float, outdir: Path | str | None = None
+    posterior: Posterior,
+    ppd: PosteriorPredictive,
+    run_id: str,
+    outdir: Path | str | None = None,
 ) -> Path:
-    """Save the mean and covariance in numpy files, and the evidence in a txt files.
+    """Save the posterior and posterior predictive.
 
-    outdir is an optional root output directory.  Output files will be saved in a timestamped subdirectory.
+    outdir is an optional root output directory.
+    Output files will be saved in a subdirectory <outdir>/<run_id>.
+
+    The log_evidence in `posterior` is saved in a human-readable txt file for quick access.
 
     Returns the full output directory path.
     """
+    from joblib import dump
+
     if outdir is None:
         outdir = ROOT / "outputs"
     outdir = Path(outdir)
 
-    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    hex = uuid.uuid4().hex[:8]
-    outdir /= f"{now}_{hex}"
+    outdir /= run_id
     outdir.mkdir(parents=True, exist_ok=False)
-    np.save(outdir / "mean", mean)
-    np.save(outdir / "cov", cov)
+    dump(posterior, outdir / "posterior.joblib")
+    dump(ppd, outdir / "ppd.joblib")
     with open(outdir / "evidence.txt", "w") as f:
-        f.write(str(ev))
+        f.write(str(posterior.ln_Z))
     return outdir
+
+
+def _run_id() -> str:
+    from uuid import uuid4
+
+    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    hex = uuid4().hex[:8]
+    return f"{now}_{hex}"
 
 
 def main():
@@ -83,6 +99,7 @@ def main():
     parser.add_argument(
         "--config", "-c", default=str(ROOT / "experiments" / "default.toml")
     )
+    parser.add_argument("--run-id", default=_run_id())
     args = parser.parse_args()
 
     cfg = load_config(Path(args.config))
@@ -90,7 +107,7 @@ def main():
     data_file = Path(cfg.data.file)
     logger.info("Reading data from %s", data_file)
     df = pd.read_parquet(data_file)
-    data = (df.delta_t / df.inner_core_travel_time).astype(float).to_numpy()
+    data = (df.delta_t / df.inner_core_travel_time).astype(float).to_numpy().astype(float)
     ic_in = np.stack(df.in_location.tolist())
     ic_out = np.stack(df.out_location.tolist())
 
@@ -126,8 +143,15 @@ def main():
     logger.info("Posterior mean shape: %s", mp.shape)
     Zp = calc_log_evidence(data, inferred, nuisance)
     logger.info("Log-evidence: %s", Zp)
+    posterior = Posterior(mp, Cp, data, Zp)
 
-    outdir = save(mp, Cp, Zp, cfg.output.prefix)
+    C_pred = calc_posterior_predictive_cov(inferred, nuisance)
+    logger.info("Posterior predicted covariance shape: %s", C_pred.shape)
+    mu_pred = calc_posterior_predictive_mean(data, inferred, nuisance)
+    logger.info("Posterior predicted mean shape: %s", mu_pred.shape)
+    ppd = PosteriorPredictive(mu_pred, C_pred, data)
+
+    outdir = save(posterior, ppd, args.run_id, cfg.output.prefix)
 
     # save resolved configuration for provenance
     resolved = {
