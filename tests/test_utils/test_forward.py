@@ -4,11 +4,13 @@ from raytracer.sampling import MWSphericalSampling
 from tti.traveltimes.traveltimes import calculate_path_direction_vector
 
 from utils import construct_forward_map
-from utils.forward import _determine_weights
+from utils.forward import _determine_weights, construct_ssi_ak_filter
 
 
 def test__determine_weights() -> None:
-    mesh = SphericalMesh(1.0, 1, MWSphericalSampling(1))  # n_cells = 1 so all weights should be 1.0
+    mesh = SphericalMesh(
+        1.0, 1, MWSphericalSampling(1)
+    )  # n_cells = 1 so all weights should be 1.0
     ic_in = np.array([[0.0, 90.0, 1.0]])
     ic_out = np.array([[0.0, -90.0, 1.0]])
     pd = calculate_path_direction_vector(ic_in, ic_out)
@@ -35,5 +37,22 @@ def test_construct_forward_map_applied() -> None:
     assert G.shape == (n_paths, n_params)
     np.testing.assert_allclose(G, np.array([[0, 1, 0], [1, 0, 0]]), atol=1e-15)
 
-    m = np.arange(3) # A = 0, C = 1, F = 2 => dt = 1
-    np.testing.assert_allclose(G@m, np.array([1, 0]))  # C, A
+    m = np.arange(3)  # A = 0, C = 1, F = 2 => dt = 1
+    np.testing.assert_allclose(G @ m, np.array([1, 0]))  # C, A
+
+
+def test_construct_ssi_ak_filter() -> None:
+    turning_points = np.array(
+        [
+            [0, 0, 1221.5],
+            [0, 0, 1221.5],
+            [-75.0, 7.0, 1000.0],
+            [-75.0, 7.0, 1000.0],
+            [-75.0, 7.0, 1000.0],
+        ]
+    )
+    zeta = np.array([0.0, 30.0, 30, 0.0, 30.0])
+
+    expected = np.array([[0, 0], [0, 0], [1, 0], [0, 0], [0, 1]])  # 4x1
+    actual = construct_ssi_ak_filter(turning_points, zeta)
+    np.testing.assert_array_equal(actual, expected)

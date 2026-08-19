@@ -16,7 +16,7 @@ from tti.traveltimes.traveltimes import (
     calculate_relative_traveltime_voigt,
 )
 
-from .geometry import latlon_to_xyz
+from .geometry import latlon_to_xyz, pairwise_angular_distance
 
 logger = logging.getLogger(__name__)
 
@@ -142,3 +142,56 @@ def _love_vector_to_voigt_tensor_transformation() -> np.ndarray:
 def _expand_tensor_to_mesh(T: np.ndarray, n_segments: int) -> np.ndarray:
     # Broadcast T to (n_segments,5,6,6)
     return np.broadcast_to(T[None, ...], (n_segments, *T.shape))
+
+
+def construct_ssi_ak_filter(
+    turning_point: np.ndarray, zeta: np.ndarray, radius: float = 15.0
+) -> np.ndarray:
+    """Use if IC turning point and angle with ERA are available.
+
+    Following 10.1016/j.pepi.2020.106427, the SSI-AK path have 26<zeta<32.
+    I've gone more conservative.
+    Combined with turning points beneath the northern coast of South America, this filter is a decent option to find the correct paths.
+
+    Returns:
+        boolean array (n_paths x n_ssi_ak)
+    """
+    if turning_point.shape[0] != zeta.shape[0]:
+        raise RuntimeError("Input data have incompatible shapes.")
+    n_paths = zeta.shape[0]
+
+    zeta_exclusion_range = np.array((20.0, 35.0))
+    in_zeta_exclusion = (zeta_exclusion_range[0] < zeta) & (
+        zeta < zeta_exclusion_range[1]
+    )
+
+    tp_xyz = latlon_to_xyz(*turning_point[:, [1, 0, 2]].T)
+    tp_exclusion_zone_centre = np.array((-75.0, 7.0))  # lon, lat
+    # pad with the radius so we get the 2D distance
+    tp_exc = tp_exclusion_zone_centre.repeat(n_paths).reshape((n_paths, 2), order="F")
+    tp_exc_r = np.column_stack([tp_exc, turning_point[:, -1]])
+    tp_exc_xyz = latlon_to_xyz(*tp_exc_r[:, [1, 0, 2]].T)
+
+    r = np.radians(radius)
+    v1 = tp_xyz / np.linalg.norm(tp_xyz, axis=1)[:, None]
+    v2 = tp_exc_xyz / np.linalg.norm(tp_exc_xyz, axis=1)[:, None]
+
+    # a bit of excess computation here but oh well
+    tp_distance_from_exclusion_centre = np.diag(pairwise_angular_distance(v1, v2))
+    in_tp_exclusion = tp_distance_from_exclusion_centre < r
+
+    ssi_ak_ind = np.argwhere(in_zeta_exclusion & in_tp_exclusion).squeeze()
+    n_ssi_ak = ssi_ak_ind.size
+
+    A = np.zeros((n_paths, n_ssi_ak), dtype=int)
+    A[ssi_ak_ind] = np.eye(n_ssi_ak)
+
+    return A
+
+
+def count_ssi_ak_paths(
+    turning_point: np.ndarray, zeta: np.ndarray, radius: float = 15.0
+) -> int:
+    """Helper function to return the number of paths in SSI-AK corridor."""
+    A = construct_ssi_ak_filter(turning_point, zeta, radius)
+    return A.shape[1]

@@ -22,11 +22,13 @@ from config.models import config_to_json_dict
 from utils import (
     block_iid,
     construct_forward_map,
+    construct_ssi_ak_filter,
     correlated_paths,
     iid,
     spherically_correlated_independent_anisotropy,
 )
 from utils.distributions import Posterior, PosteriorPredictive
+from utils.forward import count_ssi_ak_paths
 
 # basic module logger
 logging.basicConfig(
@@ -37,10 +39,29 @@ logger = logging.getLogger(__name__)
 
 
 register_builder("forward.build_forward", make_builder(construct_forward_map))
+
+register_builder("forward.ssi_ak_filter", make_builder(construct_ssi_ak_filter))
+register_builder(
+    "main:ssi_ak_bias_mean",
+    make_builder(  # this one's a bit messy
+        lambda turning_point, zeta, radius: np.zeros(
+            count_ssi_ak_paths(turning_point, zeta, radius)
+        )
+    ),
+)
+register_builder(
+    "main:ssi_ak_bias_cov",
+    make_builder(
+        lambda turning_point, zeta, radius, scale: (
+            scale * np.eye(count_ssi_ak_paths(turning_point, zeta, radius))
+        )
+    ),
+)
+
 register_builder("noise:block_iid", make_builder(block_iid))
 register_builder("noise:correlated_paths", make_builder(correlated_paths))
 
-register_builder("main:eye", make_builder(lambda n_data: np.eye(n_data)))
+register_builder("main:eye", make_builder(lambda n_data, scale: scale * np.eye(n_data)))
 register_builder("prior.iid", make_builder(iid))
 register_builder(
     "prior.spherically_correlated",
@@ -110,6 +131,7 @@ def main():
     data = (df.delta_t / df.inner_core_travel_time).astype(float).to_numpy().astype(float)
     ic_in = np.stack(df.in_location.tolist())
     ic_out = np.stack(df.out_location.tolist())
+    turning_point = np.stack(df.turning_point.tolist())
 
     logger.debug(
         "Loaded data: n_obs=%d ic_in.shape=%s ic_out.shape=%s",
@@ -118,15 +140,19 @@ def main():
         ic_out.shape,
     )
 
+    logger.info("Creating mesh")
     mesh = cfg.mesh.to_mesh()
 
+    logger.info("Configuring Gaussian Components")
     context = {  # all the arguments to constructors only known at runtime
         "n_params": mesh.n_cells * 3,
         "n_data": data.size,
         "ic_in": ic_in,
         "ic_out": ic_out,
+        "turning_point": turning_point,
         "ref_phase": df.reference_phase.to_list(),
         "ic_tt": df.inner_core_travel_time.astype(float).to_numpy(),
+        "zeta": df.zeta.astype(float).to_numpy(),
         "mesh": mesh,
     }
     inferred, nuisance = cfg.components.to_gaussian_components(context=context)
