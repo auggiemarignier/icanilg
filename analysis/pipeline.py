@@ -1,43 +1,23 @@
-"""Template to startup postprocessing scripts."""
-import argparse
-import json
+"""Posterior and PPD Analysis."""
+
 import logging
 import traceback
 from collections.abc import Iterable
 from json import dump
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import numpy as np
-from joblib import load
 
-from config.models import Config
 from utils.distributions import Posterior, PosteriorPredictive
+
+from ._types import dict_s
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-ROOT = Path(__file__).parent.parent.resolve()
-OUTDIR = ROOT / "outputs"
-
-
-def load_results(results_dir: Path) -> tuple[Posterior, PosteriorPredictive, Config]:
-    """Load the posterior and posterior predictive distributions, and the original config."""
-    if not results_dir.exists():
-        raise FileNotFoundError
-
-    posterior = cast(Posterior, load(results_dir / "posterior.joblib"))
-    ppd = cast(PosteriorPredictive, load(results_dir / "ppd.joblib"))
-    with open(results_dir / "config_resolved.json", encoding="utf-8") as f:
-        cfg = Config.from_dict(json.load(f)["config"])
-
-    return posterior, ppd, cfg
-
-
-dict_s = dict[str, Any]
 
 
 class AnalysisFn(Protocol):
@@ -50,11 +30,6 @@ class AnalysisFn(Protocol):
 
 
 Step = tuple[str, AnalysisFn]  # (name, callable)
-
-_pipeline: tuple[Step, ...] = (
-    # add callables here
-    # e.g. ("mahalanobis", mahalanobis_step)
-)
 
 
 def _normalise_output(out: dict_s | None) -> tuple[dict_s, dict_s, dict_s]:
@@ -142,23 +117,10 @@ class AnalysisPipeline:
         return summary
 
 
-def main():
-    """Analyse the posterior and posterior predictive distributions."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--run-id", required=True)
-    args = parser.parse_args()
+def save_analysis(summary: dict_s, outdir: Path) -> None:
+    """Save the analysis dictionary in a subdirectory of the output directory."""
 
-    results_dir = OUTDIR / args.run_id
-    posterior, ppd, cfg = load_results(results_dir)
-    outdir = results_dir / "analysis"
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    context = {"outdir": outdir}  # add some context that might be helpful
-    summary = AnalysisPipeline(_pipeline)(posterior, ppd, context)
+    outdir /= "analysis"
+    outdir.mkdir(parents=True, exist_ok=False)
     with open(outdir / "analysis.json", "w") as f:
         dump(summary, f, indent=2)
-    logger.info("Analysis summary: %s", summary["scalars"])
-
-
-if __name__ == "__main__":
-    main()

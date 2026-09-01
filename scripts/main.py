@@ -1,5 +1,4 @@
 """Solve the IC anisotropy problem modelled as a purely linear gaussian system."""
-
 import argparse
 import datetime
 import logging
@@ -8,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from linear_gaussian import (
+    GaussianComponent,
     calc_log_evidence,
     calc_posterior_cov,
     calc_posterior_mean,
@@ -15,6 +15,13 @@ from linear_gaussian import (
     calc_posterior_predictive_mean,
 )
 
+from analysis import AnalysisPipeline, save_analysis
+from analysis.pipeline import Step
+from analysis.ssi_ak_ppd import (
+    ppd_mahalanobis_ssi_ak,
+    ppd_mahalanobis_ssi_ak_complement,
+    ppd_mahalanobis_total,
+)
 from config import load_config, save_resolved_config
 from config.builders import make_builder
 from config.components import register_builder
@@ -36,7 +43,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
 
 register_builder("forward.build_forward", make_builder(construct_forward_map))
 
@@ -74,33 +80,23 @@ register_builder("main:noise_mean", make_builder(lambda n_data: np.zeros(n_data)
 ROOT = Path(__file__).parent.parent.resolve()
 
 
-def save(
+def save_full_outputs(
     posterior: Posterior,
     ppd: PosteriorPredictive,
-    run_id: str,
-    outdir: Path | str | None = None,
+    outdir: Path,
 ) -> Path:
     """Save the posterior and posterior predictive.
 
     outdir is an optional root output directory.
     Output files will be saved in a subdirectory <outdir>/<run_id>.
 
-    The log_evidence in `posterior` is saved in a human-readable txt file for quick access.
-
     Returns the full output directory path.
     """
     from joblib import dump
 
-    if outdir is None:
-        outdir = ROOT / "outputs"
-    outdir = Path(outdir)
-
-    outdir /= run_id
     outdir.mkdir(parents=True, exist_ok=False)
     dump(posterior, outdir / "posterior.joblib")
     dump(ppd, outdir / "ppd.joblib")
-    with open(outdir / "evidence.txt", "w") as f:
-        f.write(str(posterior.ln_Z))
     return outdir
 
 
@@ -112,6 +108,33 @@ def _run_id() -> str:
     return f"{now}_{hex}"
 
 
+def infer_posterior(
+    d: np.ndarray, inferred: list[GaussianComponent], nuisance: list[GaussianComponent]
+) -> Posterior:
+    """Infer the posterior distribution."""
+    Cp = calc_posterior_cov(inferred, nuisance)
+    mp = calc_posterior_mean(d, inferred, nuisance)
+    Zp = calc_log_evidence(d, inferred, nuisance)
+    return Posterior(mp, Cp, d, Zp)
+
+
+def infer_ppd(
+    d: np.ndarray, inferred: list[GaussianComponent], nuisance: list[GaussianComponent]
+) -> PosteriorPredictive:
+    """Infer the posterior predictive distribution."""
+    C_pred = calc_posterior_predictive_cov(inferred, nuisance)
+    mu_pred = calc_posterior_predictive_mean(d, inferred, nuisance)
+    return PosteriorPredictive(mu_pred, C_pred, d)
+
+
+analysis_steps: tuple[Step, ...] = (
+    ("ln_evidence", lambda posterior, ppd, context: {"ln_evidence": posterior.ln_Z}),
+    ("mahalanobis_total", ppd_mahalanobis_total),
+    ("mahalanobis_ssi_ak", ppd_mahalanobis_ssi_ak),
+    ("mahalanobis_ssi_ak_comp", ppd_mahalanobis_ssi_ak_complement),
+)
+
+
 def main():
     """Run an inversion based on a given config file."""
     parser = argparse.ArgumentParser(
@@ -121,6 +144,11 @@ def main():
         "--config", "-c", default=str(ROOT / "experiments" / "default.toml")
     )
     parser.add_argument("--run-id", default=_run_id())
+    parser.add_argument(
+        "--save-dists",
+        action="store_true",
+        help="Save the full Posterior and Posterior Predictive",
+    )
     args = parser.parse_args()
 
     cfg = load_config(Path(args.config))
@@ -128,7 +156,9 @@ def main():
     data_file = Path(cfg.data.file)
     logger.info("Reading data from %s", data_file)
     df = pd.read_parquet(data_file)
-    data = (df.delta_t / df.inner_core_travel_time).astype(float).to_numpy().astype(float)
+    data = (
+        (df.delta_t / df.inner_core_travel_time).astype(float).to_numpy().astype(float)
+    )
     ic_in = np.stack(df.in_location.tolist())
     ic_out = np.stack(df.out_location.tolist())
     turning_point = np.stack(df.turning_point.tolist())
@@ -163,23 +193,27 @@ def main():
         nuisance[0].C.shape,
     )
 
-    Cp = calc_posterior_cov(inferred, nuisance)
-    logger.info("Posterior covariance shape: %s", Cp.shape)
-    mp = calc_posterior_mean(data, inferred, nuisance)
-    logger.info("Posterior mean shape: %s", mp.shape)
-    Zp = calc_log_evidence(data, inferred, nuisance)
-    logger.info("Log-evidence: %s", Zp)
-    posterior = Posterior(mp, Cp, data, Zp)
+    posterior = infer_posterior(data, inferred, nuisance)
+    logger.info("Posterior covariance shape: %s", posterior.cov.shape)
+    logger.info("Posterior mean shape: %s", posterior.mean.shape)
+    logger.info("Log-evidence: %s", posterior.ln_Z)
 
-    C_pred = calc_posterior_predictive_cov(inferred, nuisance)
-    logger.info("Posterior predicted covariance shape: %s", C_pred.shape)
-    mu_pred = calc_posterior_predictive_mean(data, inferred, nuisance)
-    logger.info("Posterior predicted mean shape: %s", mu_pred.shape)
-    ppd = PosteriorPredictive(mu_pred, C_pred, data)
+    ppd = infer_ppd(data, inferred, nuisance)
+    logger.info("Posterior predicted covariance shape: %s", ppd.cov.shape)
+    logger.info("Posterior predicted mean shape: %s", ppd.mean.shape)
 
-    outdir = save(posterior, ppd, args.run_id, cfg.output.prefix)
+    try:
+        radius = float(cfg.components.inferred[1]["A"]["kwargs"]["radius"])
+    except IndexError or KeyError:
+        radius = 15.0
+    context["filt"] = (
+        construct_ssi_ak_filter(context["turning_point"], context["zeta"], radius)
+        .sum(axis=1)
+        .astype(bool)
+    )
+    summary = AnalysisPipeline(analysis_steps)(posterior, ppd, context)
+    logger.info("Analysis summary: %s", summary["scalars"])
 
-    # save resolved configuration for provenance
     resolved = {
         "config": config_to_json_dict(cfg),
         "derived": {
@@ -188,7 +222,15 @@ def main():
             "mesh_n_cells": getattr(mesh, "n_cells", None),
         },
     }
+    outdir = ROOT / "outputs" / args.run_id
+    outdir.mkdir(parents=True, exist_ok=False)
+
     save_resolved_config(outdir, resolved)
+    if args.save_dists:
+        save_full_outputs(posterior, ppd, outdir)
+
+    save_analysis(summary, outdir)
+
     logger.info("Saved outputs and resolved config to %s", outdir)
 
 
