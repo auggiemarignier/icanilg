@@ -11,17 +11,17 @@ lateral_resolution = 50
 [[components.inferred]]
 A = { builder = "forward.build_forward", kwargs = { normalisation = 0.5 } }
 C = { builder = "prior.spherically_correlated", kwargs = { sigma2 = 0.1, lat_corr_length = 30, rad_corr_length = 300 } }
-mu = { builder = "main:prior_mean", kwargs = {} }
+mu = { builder = "prior.zero_mean", kwargs = {} }
 
 [[components.inferred]]
 A = { builder = "forward.ssi_ak_filter", kwargs = { radius = 15 } }
-C = { builder = "main:ssi_ak_bias_cov", kwargs = { scale = 0.05, radius = 15 } }
-mu = { builder = "main:ssi_ak_bias_mean", kwargs = { radius = 15 } }
+C = { builder = "forward.ssi_ak_bias_cov", kwargs = { scale = 0.05, radius = 15 } }
+mu = { builder = "forward.ssi_ak_bias_mean", kwargs = { radius = 15 } }
 
 [[components.nuisance]]
-A = { builder = "main:eye", kwargs = { scale = 1.0 } }
-C = { builder = "noise:correlated_paths", kwargs = { corr_length = 5 } }
-mu = { builder = "main:noise_mean", kwargs = {} }
+A = { builder = "forward.eye", kwargs = { scale = 1.0 } }
+C = { builder = "noise.correlated_paths", kwargs = { corr_length = 5 } }
+mu = { builder = "noise.zero_mean", kwargs = {} }
 
 [output]
 prefix = "outputs/ssi_ak_bias"

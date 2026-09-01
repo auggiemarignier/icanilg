@@ -23,19 +23,9 @@ from analysis.ssi_ak_ppd import (
     ppd_mahalanobis_total,
 )
 from config import load_config, save_resolved_config
-from config.builders import make_builder
-from config.components import register_builder
 from config.models import config_to_json_dict
-from utils import (
-    block_iid,
-    construct_forward_map,
-    construct_ssi_ak_filter,
-    correlated_paths,
-    iid,
-    spherically_correlated_independent_anisotropy,
-)
 from utils.distributions import Posterior, PosteriorPredictive
-from utils.forward import count_ssi_ak_paths
+from utils.forward import construct_ssi_ak_filter
 
 # basic module logger
 logging.basicConfig(
@@ -43,38 +33,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-register_builder("forward.build_forward", make_builder(construct_forward_map))
-
-register_builder("forward.ssi_ak_filter", make_builder(construct_ssi_ak_filter))
-register_builder(
-    "main:ssi_ak_bias_mean",
-    make_builder(  # this one's a bit messy
-        lambda turning_point, zeta, radius: np.zeros(
-            count_ssi_ak_paths(turning_point, zeta, radius)
-        )
-    ),
-)
-register_builder(
-    "main:ssi_ak_bias_cov",
-    make_builder(
-        lambda turning_point, zeta, radius, scale: (
-            scale * np.eye(count_ssi_ak_paths(turning_point, zeta, radius))
-        )
-    ),
-)
-
-register_builder("noise:block_iid", make_builder(block_iid))
-register_builder("noise:correlated_paths", make_builder(correlated_paths))
-
-register_builder("main:eye", make_builder(lambda n_data, scale: scale * np.eye(n_data)))
-register_builder("prior.iid", make_builder(iid))
-register_builder(
-    "prior.spherically_correlated",
-    make_builder(spherically_correlated_independent_anisotropy),
-)
-register_builder("main:prior_mean", make_builder(lambda n_params: np.zeros(n_params)))
-register_builder("main:noise_mean", make_builder(lambda n_data: np.zeros(n_data)))
 
 
 ROOT = Path(__file__).parent.parent.resolve()

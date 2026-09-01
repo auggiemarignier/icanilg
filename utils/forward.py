@@ -16,6 +16,9 @@ from tti.traveltimes.traveltimes import (
     calculate_relative_traveltime_voigt,
 )
 
+from config.builders import make_builder
+from config.components import register_builder
+
 from .geometry import latlon_to_xyz, pairwise_angular_distance
 
 logger = logging.getLogger(__name__)
@@ -195,3 +198,26 @@ def count_ssi_ak_paths(
     """Helper function to return the number of paths in SSI-AK corridor."""
     A = construct_ssi_ak_filter(turning_point, zeta, radius)
     return A.shape[1]
+
+
+register_builder("forward.build_forward", make_builder(construct_forward_map))
+register_builder("forward.ssi_ak_filter", make_builder(construct_ssi_ak_filter))
+register_builder(
+    "forward.ssi_ak_bias_mean",
+    make_builder(  # this one's a bit messy
+        lambda turning_point, zeta, radius: np.zeros(
+            count_ssi_ak_paths(turning_point, zeta, radius)
+        )
+    ),
+)
+register_builder(
+    "forward.ssi_ak_bias_cov",
+    make_builder(
+        lambda turning_point, zeta, radius, scale: (
+            scale * np.eye(count_ssi_ak_paths(turning_point, zeta, radius))
+        )
+    ),
+)
+register_builder(
+    "forward.eye", make_builder(lambda n_data, scale: scale * np.eye(n_data))
+)

@@ -2,6 +2,9 @@
 
 import numpy as np
 
+from config.builders import make_builder
+from config.components import register_builder
+
 from .geometry import latlon_to_xyz, pairwise_angular_distance
 
 
@@ -61,3 +64,8 @@ def correlated_paths(
     C = diag @ np.exp(-d / L) @ diag
     nugget = np.diag(C) * 0.01  # helps conditioning
     return C + np.diag(nugget)
+
+
+register_builder("noise.block_iid", make_builder(block_iid))
+register_builder("noise.correlated_paths", make_builder(correlated_paths))
+register_builder("noise.zero_mean", make_builder(lambda n_data: np.zeros(n_data)))

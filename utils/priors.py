@@ -1,6 +1,10 @@
 """Various Gaussian prior functions on anisotropy parameters."""
+
 import numpy as np
 from raytracer import SphericalMesh
+
+from config.builders import make_builder
+from config.components import register_builder
 
 from .geometry import pairwise_angular_distance, thetaphi_to_unit_vectors
 
@@ -71,3 +75,11 @@ def spherically_correlated_independent_anisotropy(
 
     # expand to interleaved parameters [A0,C0,F0,...]
     return np.kron(C_cells, np.eye(3))
+
+
+register_builder("prior.iid", make_builder(iid))
+register_builder(
+    "prior.spherically_correlated",
+    make_builder(spherically_correlated_independent_anisotropy),
+)
+register_builder("prior.zero_mean", make_builder(lambda n_params: np.zeros(n_params)))
