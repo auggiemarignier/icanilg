@@ -1,6 +1,6 @@
 """Stuff."""
 
-from .forward import construct_forward_map, construct_ssi_ak_filter
+from .forward import construct_ssi_ak_filter, construct_ti_forward_map
 from .noise import block_iid, correlated_paths
 from .priors import iid, spherically_correlated_independent_anisotropy
 
@@ -9,6 +9,6 @@ __all__ = [
     "iid",
     "correlated_paths",
     "spherically_correlated_independent_anisotropy",
-    "construct_forward_map",
+    "construct_ti_forward_map",
     "construct_ssi_ak_filter"
 ]
