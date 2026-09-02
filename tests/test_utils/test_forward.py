@@ -1,18 +1,69 @@
 import numpy as np
+import pytest
 from raytracer import SphericalMesh
 from raytracer.sampling import MWSphericalSampling
-from tti.elastic.voigt_mapping import matrix_to_voigt
-from tti.rotation import rotation_matrix_zy
 from tti.traveltimes.traveltimes import calculate_path_direction_vector
 
 from utils.forward import (
     _determine_weights,
-    _expand_tensor_to_mesh,
-    _rotate_expanded_tensor_to_mesh,
+    construct_iso_forward_map,
     construct_rti_forward_map,
     construct_ssi_ak_filter,
     construct_ti_forward_map,
 )
+
+
+def _random_ic_pairs(n_paths, seed=0):
+    rng = np.random.RandomState(seed)
+    lon = rng.uniform(-180.0, 180.0, size=n_paths)
+    lat = rng.uniform(-90.0, 90.0, size=n_paths)
+    r = np.ones(n_paths)
+    ic_in = np.column_stack([lon, lat, r])
+
+    # Make sure out points are different: rotate lon by random amount
+    lon2 = (lon + rng.uniform(10.0, 180.0, size=n_paths)) % 360 - 180
+    lat2 = rng.uniform(-90.0, 90.0, size=n_paths)
+    ic_out = np.column_stack([lon2, lat2, r])
+    return ic_in, ic_out
+
+
+def test_weights_match_mesh_n_cells_on_typical_mesh() -> None:
+    mesh = SphericalMesh(1.0, 3, MWSphericalSampling(4))
+    ic_in, ic_out = _random_ic_pairs(20, seed=1)
+    pd = calculate_path_direction_vector(ic_in, ic_out)
+
+    w = _determine_weights(mesh, ic_in, pd)
+    # In typical meshes the resolved number of segments should match mesh.n_cells
+    assert w.shape[0] == mesh.n_cells
+    assert w.shape[1] == ic_in.shape[0]
+
+
+@pytest.mark.parametrize(
+    "constructor,n_per_cell",
+    [
+        (construct_ti_forward_map, 3),
+        (construct_rti_forward_map, 3),
+        (construct_iso_forward_map, 1),
+    ],
+)
+def test_forward_maps_dense_mesh_shapes_and_finite_values(
+    constructor, n_per_cell
+) -> None:
+    mesh = SphericalMesh(1.0, 4, MWSphericalSampling(6))
+    n_paths = 30
+    ic_in, ic_out = _random_ic_pairs(n_paths, seed=2)
+
+    G = constructor(ic_in, ic_out, mesh, normalisation=1.0)
+
+    # Shape
+    assert G.shape == (n_paths, n_per_cell * mesh.n_cells)
+
+    # Applying random parameter vectors yields finite outputs
+    m = np.random.RandomState(3).randn(n_per_cell * mesh.n_cells)
+    out = G @ m
+
+    assert out.shape == (n_paths,)
+    assert np.all(np.isfinite(out))
 
 
 def test__determine_weights() -> None:
@@ -66,39 +117,6 @@ def test_construct_ssi_ak_filter() -> None:
     np.testing.assert_array_equal(actual, expected)
 
 
-def test_expand_and_rotate_tensor_to_mesh_zero_tilt_returns_unrotated() -> None:
-    mesh = SphericalMesh(1.0, 1, MWSphericalSampling(1))
-
-    # override sampling points to be zero tilt for all lateral cells
-    mesh.sampling.sampling_points = lambda: np.zeros((mesh.sampling.n_cells, 2))
-
-    dC = np.arange(5 * 6 * 6, dtype=float).reshape((5, 6, 6))
-
-    expanded = _expand_tensor_to_mesh(dC, mesh.n_cells)
-    rotated = _rotate_expanded_tensor_to_mesh(expanded, mesh)
-
-    expected = np.broadcast_to(dC[None, ...], (mesh.n_cells, *dC.shape))
-    np.testing.assert_allclose(rotated, expected)
-
-
-def test_expand_and_rotate_tensor_to_mesh_shape_and_rotation() -> None:
-    mesh = SphericalMesh(1.0, 2, MWSphericalSampling(2))
-
-    dC = np.arange(5 * 6 * 6, dtype=float).reshape((5, 6, 6))
-
-    expanded = _expand_tensor_to_mesh(dC, mesh.n_cells)
-    rotated = _rotate_expanded_tensor_to_mesh(expanded, mesh)
-
-    assert rotated.shape == (mesh.n_cells, 5, 6, 6)
-
-    # verify first cell equals explicit rotation computed from sampling point
-    theta, phi = mesh.sampling.sampling_points()[0]
-    R_voigt = matrix_to_voigt(rotation_matrix_zy(phi, theta))
-    expected0 = R_voigt @ dC[0] @ R_voigt.swapaxes(-2, -1)
-
-    np.testing.assert_allclose(rotated[0, 0], expected0)
-
-
 def test_construct_rti_matches_construct_forward_when_zero_tilt() -> None:
     mesh = SphericalMesh(1.0, 1, MWSphericalSampling(1))
     mesh.sampling.sampling_points = lambda: np.zeros((mesh.sampling.n_cells, 2))
@@ -126,3 +144,26 @@ def test_construct_rti_matches_construct_ti_when_polar_rotation() -> None:
     G_rti = construct_rti_forward_map(ic_in, ic_out, mesh, normalisation=1.0)
 
     np.testing.assert_allclose(G_rti, G, atol=1e-14)
+
+
+def test_construct_iso_matches_construct_ti() -> None:
+    mesh = SphericalMesh(1.0, 1, MWSphericalSampling(1))
+    mesh.sampling.sampling_points = lambda: (
+        np.ones((mesh.sampling.n_cells, 2))
+        * np.array([np.pi, 0.0])  # everything pointing south
+    )
+
+    ic_in = np.array([[0.0, 90.0, 1.0], [0.0, 0.0, 1.0]])
+    ic_out = np.array([[0.0, -90.0, 1.0], [180.0, 0.0, 1.0]])
+
+    G = construct_ti_forward_map(ic_in, ic_out, mesh, normalisation=1.0)
+    G_iso = construct_iso_forward_map(ic_in, ic_out, mesh, normalisation=1.0)
+
+    lmda = 2
+    A = lmda
+    C = lmda
+    F = lmda
+
+    iso_params = np.array([lmda] * mesh.n_cells)
+    love_params = np.array([A, C, F] * mesh.n_cells)
+    np.testing.assert_allclose(G_iso @ iso_params, G @ love_params, atol=1e-14)

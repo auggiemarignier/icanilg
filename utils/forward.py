@@ -26,70 +26,6 @@ from .geometry import latlon_to_xyz, pairwise_angular_distance
 logger = logging.getLogger(__name__)
 
 
-def construct_ti_forward_map(
-    ic_in: np.ndarray, ic_out: np.ndarray, mesh: SphericalMesh, normalisation: float
-) -> np.ndarray:
-    """Constructs the linear map from Love parameters to travel time.
-
-    The input to the forward mapping is a stack of Love parameters, 3 (A,C,F) for each cell in the mesh.
-
-    Combines various bits a pieces:
-    1) Add 0 shear components (L, N) to input vector
-    2) Mapping from a vector of elastic parameters to Voigt elastic tensor
-        Making use of the derivative objects in `tti.elastic.voigt` a basis can be constructed
-            basis = np.stack([dCdA, dCdC, dCdF, dCdL, dCdN], axis=0)
-    3) With the `path_directions` compute the travel time in each cell as in `tti.traveltimes.traveltimes.calculate_relative_traveltime_voigt`
-    4) With the `weights` calculated from `determine_weights` perform a weighted sum along each path as in `tti.traveltimes.traveltimes.TravelTimeCalculator._call_core.
-
-    These four steps are to be combined into a single matrix that this function returns.
-
-    The returned matrix has shape (n_paths, 3*n_segments)
-    """
-
-    dC = _love_vector_to_voigt_tensor_transformation()  # (5, 6, 6)
-    expanded = _expand_tensor_to_mesh(dC, mesh.n_cells)
-    return _build_forward_map_from_expanded_voigt(
-        expanded, ic_in, ic_out, mesh, normalisation
-    )
-
-
-def _build_forward_map_from_expanded_voigt(
-    dC_b: np.ndarray,
-    ic_in: np.ndarray,
-    ic_out: np.ndarray,
-    mesh: SphericalMesh,
-    normalisation: float,
-) -> np.ndarray:
-    """Shared helper: build forward matrix from expanded per-cell Voigt derivatives.
-
-    Parameters
-    ----------
-    dC_b : ndarray, shape (n_segments, 5, 6, 6)
-        Per-segment derivative tensors (Voigt form), already expanded and
-        rotated if necessary.
-    ic_in, ic_out, mesh, normalisation : passed to traveltime routines.
-
-    Returns
-    -------
-    M : ndarray, shape (n_paths, n_segments*3)
-    """
-    path_directions = calculate_path_direction_vector(ic_in, ic_out)
-    weights = _determine_weights(mesh, ic_in, path_directions)  # (n_segments, n_paths)
-    n_segments, n_paths = weights.shape
-
-    T = _compressional_to_love_transformation_matrix()  # (5, 3)
-    n_params_per_seg = T.shape[1]
-
-    dt_dC = calculate_relative_traveltime_voigt(
-        path_directions, dC_b, normalisation=normalisation
-    )  # (n_segments, 5, n_paths)
-    dt_model = np.tensordot(dt_dC, T, axes=([1], [0]))  # (n_segments, n_paths, 3)
-    dt_model = dt_model.transpose(0, 2, 1)  # (n_segments, 3, n_paths)
-    weighted = weights[:, None, :] * dt_model  # (n_segments, 3, n_paths)
-    M = weighted.reshape(n_segments * n_params_per_seg, n_paths).T
-    return M
-
-
 def _determine_weights(
     mesh: SphericalMesh, ic_in: np.ndarray, path_directions: np.ndarray
 ) -> np.ndarray:
@@ -143,6 +79,29 @@ def _compressional_to_love_transformation_matrix() -> np.ndarray:
     )
 
 
+def _isotropic_to_love_transformation_matrix() -> np.ndarray:
+    """Map to the 5 Love basis (A,C,F,L,N) from the 1 isotropic parameter (lambda)."""
+
+    # just for completeness I've written this out as [lambda] -> [lambda, mu] -> [A, C, F, L, N]
+    T1 = np.array(
+        [
+            [1.0],  # lambda
+            [0.0],  # mu (not modelled)
+        ]
+    )
+    T2 = np.array(
+        [
+            [1.0, 2.0],  # A = lambda + 2mu
+            [1.0, 2.0],  # C = lambda + 2mu
+            [1.0, 0.0],  # F = lambda
+            [0.0, 1.0],  # L = mu
+            [0.0, 1.0],  # N = mu
+        ],
+        dtype=float,
+    )
+    return T2 @ T1
+
+
 def _love_vector_to_voigt_tensor_transformation() -> np.ndarray:
     """Map to a Voigt tensor form an (A, C, F, L, N) vector.
 
@@ -165,42 +124,6 @@ def _love_vector_to_voigt_tensor_transformation() -> np.ndarray:
         ],
         axis=0,
     )
-
-
-def _expand_tensor_to_mesh(T: np.ndarray, n_segments: int) -> np.ndarray:
-    # Broadcast T to (n_segments,5,6,6)
-    return np.broadcast_to(T[None, ...], (n_segments, *T.shape))
-
-
-def _rotate_expanded_tensor_to_mesh(
-    expanded: np.ndarray, mesh: SphericalMesh
-) -> np.ndarray:
-    """Rotate an expanded tensor array per mesh cell.
-
-    Parameters
-    ----------
-    expanded : ndarray, shape (n_cells, 5, 6, 6)
-        Already-expanded derivative tensors.
-    mesh : SphericalMesh
-        Mesh providing lateral sampling centres via `mesh.sampling.sampling_points()`
-
-    Returns
-    -------
-    rotated : ndarray, shape (n_cells, 5, 6, 6)
-    """
-
-    lateral = mesh.sampling.sampling_points()
-    per_cell_angles = np.tile(lateral, (mesh.n_radial, 1))
-
-    theta = per_cell_angles[:, 0]
-    phi = per_cell_angles[:, 1]
-
-    R = rotation_matrix_zy(phi, theta)  # (n_cells, 3, 3)
-    R_voigt = matrix_to_voigt(R)  # (n_cells, 6, 6)
-
-    R_exp = R_voigt[:, None, :, :]  # (n_cells, 1, 6, 6)
-
-    return R_exp @ expanded @ R_exp.swapaxes(-2, -1)
 
 
 def construct_ssi_ak_filter(
@@ -256,6 +179,84 @@ def count_ssi_ak_paths(
     return A.shape[1]
 
 
+def construct_ti_forward_map(
+    ic_in: np.ndarray, ic_out: np.ndarray, mesh: SphericalMesh, normalisation: float
+) -> np.ndarray:
+    """Constructs the linear map from Love parameters to travel time.
+
+    The input to the forward mapping is a stack of Love parameters, 3 (A,C,F) for each cell in the mesh.
+
+    Combines various bits a pieces:
+    1) Add 0 shear components (L, N) to input vector
+    2) Mapping from a vector of elastic parameters to Voigt elastic tensor
+        Making use of the derivative objects in `tti.elastic.voigt` a basis can be constructed
+            basis = np.stack([dCdA, dCdC, dCdF, dCdL, dCdN], axis=0)
+    3) With the `path_directions` compute the travel time in each cell as in `tti.traveltimes.traveltimes.calculate_relative_traveltime_voigt`
+    4) With the `weights` calculated from `determine_weights` perform a weighted sum along each path as in `tti.traveltimes.traveltimes.TravelTimeCalculator._call_core.
+
+    These four steps are to be combined into a single matrix that this function returns.
+
+    The returned matrix has shape (n_paths, 3*n_segments)
+    """
+    n_paths = ic_in.shape[0]
+    n_segments = mesh.n_cells
+
+    T = _compressional_to_love_transformation_matrix()  # (5, n_params_per_seg)
+    n_params_per_seg = T.shape[1]
+
+    dC_base = _love_vector_to_voigt_tensor_transformation()  # (5, 6, 6)
+    path_directions = calculate_path_direction_vector(ic_in, ic_out)
+    dt_dC = calculate_relative_traveltime_voigt(
+        path_directions, dC_base, normalisation=normalisation
+    )  # (5, n_paths)
+
+    dt_model = T.T @ dt_dC  # (n_params_per_seg, n_paths)
+
+    weights = _determine_weights(mesh, ic_in, path_directions)  # (n_segments, n_paths)
+    weighted = weights[:, None, :] * dt_model[None, :, :]  # (n_segments, n_params_per_seg, n_paths)
+    M = weighted.reshape(n_segments * n_params_per_seg, n_paths).T
+    return M
+
+
+def construct_iso_forward_map(
+    ic_in: np.ndarray, ic_out: np.ndarray, mesh: SphericalMesh, normalisation: float
+) -> np.ndarray:
+    """Constructs the linear map from isotopic parameters to travel time.
+
+    The input to the forward mapping is a stack of isotropic parameters, 1 (lambda) for each cell in the mesh.
+
+    Combines various bits a pieces:
+    1) Convert to Love parameters
+    2) Mapping from a vector of elastic parameters to Voigt elastic tensor
+        Making use of the derivative objects in `tti.elastic.voigt` a basis can be constructed
+            basis = np.stack([dCdA, dCdC, dCdF, dCdL, dCdN], axis=0)
+    3) With the `path_directions` compute the travel time in each cell as in `tti.traveltimes.traveltimes.calculate_relative_traveltime_voigt`
+    4) With the `weights` calculated from `determine_weights` perform a weighted sum along each path as in `tti.traveltimes.traveltimes.TravelTimeCalculator._call_core.
+
+    These four steps are to be combined into a single matrix that this function returns.
+
+    The returned matrix has shape (n_paths, 1*n_segments)
+    """
+    n_paths = ic_in.shape[0]
+    n_segments = mesh.n_cells
+
+    T = _isotropic_to_love_transformation_matrix()  # (5, n_params_per_seg)
+    n_params_per_seg = T.shape[1]
+
+    dC_base = _love_vector_to_voigt_tensor_transformation()  # (5, 6, 6)
+    path_directions = calculate_path_direction_vector(ic_in, ic_out)
+    dt_dC = calculate_relative_traveltime_voigt(
+        path_directions, dC_base, normalisation=normalisation
+    )  # (5, n_paths)
+
+    dt_model = T.T @ dt_dC  # (n_params_per_seg, n_paths)
+
+    weights = _determine_weights(mesh, ic_in, path_directions)  # (n_segments, n_paths)
+    weighted = weights[:, None, :] * dt_model[None, :, :]  # (n_segments, n_params_per_seg, n_paths)
+    M = weighted.reshape(n_segments * n_params_per_seg, n_paths).T
+    return M
+
+
 def construct_rti_forward_map(
     ic_in: np.ndarray, ic_out: np.ndarray, mesh: SphericalMesh, normalisation: float
 ) -> np.ndarray:
@@ -276,17 +277,45 @@ def construct_rti_forward_map(
 
     The returned matrix has shape (n_paths, 3*n_segments)
     """
+    n_paths = ic_in.shape[0]
+    n_segments = mesh.n_cells
 
-    dC = _love_vector_to_voigt_tensor_transformation()  # (5, 6, 6)
-    expanded = _expand_tensor_to_mesh(dC, mesh.n_cells)
-    dC_b = _rotate_expanded_tensor_to_mesh(expanded, mesh)  # (n_segments, 5, 6, 6)
-    return _build_forward_map_from_expanded_voigt(
-        dC_b, ic_in, ic_out, mesh, normalisation
-    )
+    T = _compressional_to_love_transformation_matrix()  # (5, n_params_per_seg)
+    n_params_per_seg = T.shape[1]
+
+    dC_base = _love_vector_to_voigt_tensor_transformation()  # (5, 6, 6)
+    path_directions = calculate_path_direction_vector(ic_in, ic_out)
+
+    per_cell_angles = np.tile(mesh.sampling.sampling_points(), (mesh.n_radial, 1))
+    theta = per_cell_angles[:, 0]
+    phi = per_cell_angles[:, 1]
+
+    R_voigt = matrix_to_voigt(rotation_matrix_zy(phi, theta))[
+        :, None, :, :
+    ]  # (n_segments, 1, 6, 6)
+    dC_rot = (R_voigt @ dC_base[None, ...]) @ R_voigt.swapaxes(
+        -2, -1
+    )  # (n_segments, 5, 6, 6)
+
+    dt_dC = calculate_relative_traveltime_voigt(
+        path_directions, dC_rot, normalisation=normalisation
+    )  # (n_segments, 5, n_paths)
+
+    dt_model = np.tensordot(
+        dt_dC, T, axes=([1], [0])
+    )  # (n_segments, n_paths, n_params_per_seg)
+    dt_model = dt_model.transpose(0, 2, 1)  # (n_segments, n_params_per_seg, n_paths)
+
+    weights = _determine_weights(mesh, ic_in, path_directions)  # (n_segments, n_paths)
+    weighted = dt_model * weights[:, None, :]
+
+    M = weighted.reshape(n_segments * n_params_per_seg, n_paths).T
+    return M
 
 
 register_builder("forward.build_forward", make_builder(construct_ti_forward_map))
 register_builder("forward.build_rti_forward", make_builder(construct_rti_forward_map))
+register_builder("forward.build_iso_forward", make_builder(construct_iso_forward_map))
 register_builder("forward.ssi_ak_filter", make_builder(construct_ssi_ak_filter))
 register_builder(
     "forward.ssi_ak_bias_mean",
