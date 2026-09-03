@@ -130,14 +130,12 @@ def run(
     data: np.ndarray,
     context: dict[str, Any],
     cfg: Config,
-    run_id: str,
-    save_dists: bool = False,
-) -> None:
+) -> tuple[Posterior, PosteriorPredictive, dict[str, Any], dict[str, Any]]:
     """Run an experiment given a config."""
 
     logger.info("Creating mesh")
     mesh = cfg.mesh.to_mesh()
-    local_ctx = {"n_params": mesh.n_cells * 3, "mesh": mesh}
+    local_ctx = {"mesh": mesh}
 
     logger.info("Configuring Gaussian Components")
     inferred, nuisance = cfg.components.to_gaussian_components(
@@ -173,13 +171,7 @@ def run(
             "mesh_n_cells": getattr(mesh, "n_cells", None),
         },
     }
-    outdir = ROOT / "outputs" / cfg.output.prefix / run_id
-    outdir.mkdir(parents=True, exist_ok=False)
-    save_resolved_config(outdir, resolved)
-    if save_dists:
-        save_full_outputs(posterior, ppd, outdir)
-    save_analysis(summary, outdir)
-    logger.info("Saved outputs and resolved config to %s", outdir)
+    return posterior, ppd, summary, resolved
 
 
 def main():
@@ -202,7 +194,15 @@ def main():
     logger.info("Reading data from %s", cfg.data.file)
     data, context = load_data(cfg.data.file)
     logger.debug("Loaded data: n_obs=%d", data.shape[0])
-    run(data, context, cfg, args.run_id, args.save_dists)
+    posterior, ppd, summary, resolved = run(data, context, cfg)
+
+    outdir = ROOT / "outputs" / cfg.output.prefix / args.run_id
+    outdir.mkdir(parents=True, exist_ok=False)
+    save_resolved_config(outdir, resolved)
+    if args.save_dists:
+        save_full_outputs(posterior, ppd, outdir)
+    save_analysis(summary, outdir)
+    logger.info("Saved outputs and resolved config to %s", outdir)
 
 
 if __name__ == "__main__":
