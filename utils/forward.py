@@ -163,10 +163,9 @@ def construct_ssi_ak_filter(
     in_tp_exclusion = tp_distance_from_exclusion_centre < r
 
     ssi_ak_ind = np.argwhere(in_zeta_exclusion & in_tp_exclusion).squeeze()
-    n_ssi_ak = ssi_ak_ind.size
 
-    A = np.zeros((n_paths, n_ssi_ak), dtype=int)
-    A[ssi_ak_ind] = np.eye(n_ssi_ak)
+    A = np.zeros((n_paths, 1), dtype=int)
+    A[ssi_ak_ind] = 1
 
     return A
 
@@ -176,7 +175,7 @@ def count_ssi_ak_paths(
 ) -> int:
     """Helper function to return the number of paths in SSI-AK corridor."""
     A = construct_ssi_ak_filter(turning_point, zeta, radius)
-    return A.shape[1]
+    return A.sum()
 
 
 def construct_ti_forward_map(
@@ -213,7 +212,9 @@ def construct_ti_forward_map(
     dt_model = T.T @ dt_dC  # (n_params_per_seg, n_paths)
 
     weights = _determine_weights(mesh, ic_in, path_directions)  # (n_segments, n_paths)
-    weighted = weights[:, None, :] * dt_model[None, :, :]  # (n_segments, n_params_per_seg, n_paths)
+    weighted = (
+        weights[:, None, :] * dt_model[None, :, :]
+    )  # (n_segments, n_params_per_seg, n_paths)
     M = weighted.reshape(n_segments * n_params_per_seg, n_paths).T
     return M
 
@@ -252,7 +253,9 @@ def construct_iso_forward_map(
     dt_model = T.T @ dt_dC  # (n_params_per_seg, n_paths)
 
     weights = _determine_weights(mesh, ic_in, path_directions)  # (n_segments, n_paths)
-    weighted = weights[:, None, :] * dt_model[None, :, :]  # (n_segments, n_params_per_seg, n_paths)
+    weighted = (
+        weights[:, None, :] * dt_model[None, :, :]
+    )  # (n_segments, n_params_per_seg, n_paths)
     M = weighted.reshape(n_segments * n_params_per_seg, n_paths).T
     return M
 
@@ -317,21 +320,9 @@ register_builder("forward.build_forward", make_builder(construct_ti_forward_map)
 register_builder("forward.build_rti_forward", make_builder(construct_rti_forward_map))
 register_builder("forward.build_iso_forward", make_builder(construct_iso_forward_map))
 register_builder("forward.ssi_ak_filter", make_builder(construct_ssi_ak_filter))
+register_builder("forward.ssi_ak_bias_mean", make_builder(lambda: np.asarray([0])))
 register_builder(
-    "forward.ssi_ak_bias_mean",
-    make_builder(  # this one's a bit messy
-        lambda turning_point, zeta, radius: np.zeros(
-            count_ssi_ak_paths(turning_point, zeta, radius)
-        )
-    ),
-)
-register_builder(
-    "forward.ssi_ak_bias_cov",
-    make_builder(
-        lambda turning_point, zeta, radius, scale: (
-            scale * np.eye(count_ssi_ak_paths(turning_point, zeta, radius))
-        )
-    ),
+    "forward.ssi_ak_bias_cov", make_builder(lambda scale: np.asarray([[scale]]))
 )
 register_builder(
     "forward.eye", make_builder(lambda n_data, scale: scale * np.eye(n_data))

@@ -112,7 +112,7 @@ def test_construct_ssi_ak_filter() -> None:
     )
     zeta = np.array([0.0, 30.0, 30, 0.0, 30.0])
 
-    expected = np.array([[0, 0], [0, 0], [1, 0], [0, 0], [0, 1]])  # 4x1
+    expected = np.array([[0], [0], [1], [0], [1]])  # 5x1
     actual = construct_ssi_ak_filter(turning_points, zeta)
     np.testing.assert_array_equal(actual, expected)
 

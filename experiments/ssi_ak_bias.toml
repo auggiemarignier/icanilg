@@ -15,8 +15,8 @@ mu = { builder = "prior.zero_mean", kwargs = {} }
 
 [[components.inferred]]
 A = { builder = "forward.ssi_ak_filter", kwargs = { radius = 15 } }
-C = { builder = "forward.ssi_ak_bias_cov", kwargs = { scale = 0.05, radius = 15 } }
-mu = { builder = "forward.ssi_ak_bias_mean", kwargs = { radius = 15 } }
+C = { builder = "forward.ssi_ak_bias_cov", kwargs = { scale = 0.05 } }
+mu = { builder = "forward.ssi_ak_bias_mean", kwargs = {} }
 
 [[components.nuisance]]
 A = { builder = "forward.eye", kwargs = { scale = 1.0 } }
