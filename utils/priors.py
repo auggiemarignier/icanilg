@@ -62,24 +62,29 @@ def spherically_correlated(
     return sigma2 * np.kron(K_r, K_lat)
 
 
-def spherically_correlated_independent_anisotropy(
-    mesh: SphericalMesh, sigma2: float, lat_corr_length: float, rad_corr_length: float
+def spherically_correlated_independent_dofs(
+    mesh: SphericalMesh,
+    sigma2: float,
+    lat_corr_length: float,
+    rad_corr_length: float,
+    ndofs: int = 3,
 ) -> np.ndarray:
     """
-    Construct a spherically correlated prior where A, C and F are independent.
+    Construct a spherically correlated prior where the degrees of freedom are independent.
 
-    i.e. p(A,C,F) = p(A)p(C)p(F)
-    p(A) = p(A0,...,An)  which is correlated, similarly for p(C) and p(F)
+    e.g. in Transverse isotropy the dofs in each cell are A, C and F
+        p(A,C,F) = p(A)p(C)p(F)
+        p(A) = p(A0,...,An)  which is correlated, similarly for p(C) and p(F)
     """
     C_cells = spherically_correlated(mesh, sigma2, lat_corr_length, rad_corr_length)
 
     # expand to interleaved parameters [A0,C0,F0,...]
-    return np.kron(C_cells, np.eye(3))
+    return np.kron(C_cells, np.eye(ndofs))
 
 
 register_builder("prior.iid", make_builder(iid))
 register_builder(
     "prior.spherically_correlated",
-    make_builder(spherically_correlated_independent_anisotropy),
+    make_builder(spherically_correlated_independent_dofs),
 )
 register_builder("prior.zero_mean", make_builder(lambda n_params: np.zeros(n_params)))

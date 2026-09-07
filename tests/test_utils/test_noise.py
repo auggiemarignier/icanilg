@@ -25,21 +25,6 @@ def test_path_similarity_same_paths() -> None:
     np.testing.assert_allclose(sim, expected)
 
 
-def test_path_similarity_antiparallel_paths() -> None:
-    """Flipped entry and exit points should have a similarity of 0."""
-
-    north_pole = [0.0, 90.0, 1.0]
-    south_pole = [0.0, -90.0, 1.0]
-    ic_in = np.array([north_pole, south_pole])
-    ic_out = np.array([south_pole, north_pole])
-
-    sim = compute_path_similarity(ic_in, ic_out)
-    expected = np.zeros((2, 2))
-
-    np.testing.assert_equal(np.diag(sim), np.zeros(2))
-    np.testing.assert_allclose(sim, expected)
-
-
 def test_pairwise_angular_distance_is_symmetric() -> None:
     rng = np.random.default_rng(42)
     n = 100
@@ -89,8 +74,9 @@ def test_correlated_paths_covariance_matrix_is_valid() -> None:
         [rng.uniform(-180, 180, n), rng.uniform(-90, 90, n), np.ones(n)]
     )
     corr_length = 1.0
+    corr_scale = 1.0
     ref_phase = ["ab"] * n
     ic_tt = np.ones(100)
 
-    Cd = correlated_paths(ic_in, ic_out, corr_length, ref_phase, ic_tt)
+    Cd = correlated_paths(ic_in, ic_out, corr_length, corr_scale)
     np.linalg.cholesky(Cd)  # check for positive-definite

@@ -32,38 +32,27 @@ def compute_path_similarity(ic_in: np.ndarray, ic_out: np.ndarray) -> np.ndarray
     E = latlon_to_xyz(lat_deg=ic_in[:, 1], lon_deg=ic_in[:, 0])
     X = latlon_to_xyz(lat_deg=ic_out[:, 1], lon_deg=ic_out[:, 0])
 
-    d_EE = pairwise_angular_distance(E, E)  # Entry_i to Entry_j (diag = 0.0)
-    d_XX = pairwise_angular_distance(X, X)  # Exit_i to Exit_j   (diag = 0.0)
-    d_EX = pairwise_angular_distance(
-        E, X
-    )  # Entry_i to Exit_j  (diag ~ pi for deep rays)
-    d_XE = d_EX.T
+    d_EE = pairwise_angular_distance(E, E)
+    d_XX = pairwise_angular_distance(X, X)
 
-    d_parallel = np.sqrt(0.5 * (d_EE**2 + d_XX**2))
-    d_anti = np.sqrt(0.5 * (d_EX**2 + d_XE**2))
-
-    return np.minimum(d_parallel, d_anti)
+    return np.sqrt(0.5 * (d_EE**2 + d_XX**2))
 
 
 def correlated_paths(
     ic_in: np.ndarray,
     ic_out: np.ndarray,
     corr_length: float,
-    ref_phase: list[str],
-    ic_tt: np.ndarray,
+    corr_scale: float,
 ) -> np.ndarray:
     """Create a correlated covariance matrix, where the correlation is based on path similarity.
 
-    The variance (diagonal) is given by `block_iid`.
-
     corr_length is given in degrees.
+    corr_scale is a variance
     """
     d = compute_path_similarity(ic_in, ic_out)
     L = np.radians(corr_length)
-    diag = block_iid(ref_phase, ic_tt)
-    C = diag @ np.exp(-d / L) @ diag
-    nugget = np.diag(C) * 0.01  # helps conditioning
-    return C + np.diag(nugget)
+    K = np.exp(-(d**2) / (2 * L**2))
+    return corr_scale * K
 
 
 register_builder("noise.block_iid", make_builder(block_iid))

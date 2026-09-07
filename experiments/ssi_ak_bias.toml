@@ -20,7 +20,12 @@ mu = { builder = "forward.ssi_ak_bias_mean", kwargs = {} }
 
 [[components.nuisance]]
 A = { builder = "forward.eye", kwargs = { scale = 1.0 } }
-C = { builder = "noise.correlated_paths", kwargs = { corr_length = 5 } }
+C = { builder = "noise.block_iid" }
+mu = { builder = "noise.zero_mean", kwargs = {} }
+
+[[components.nuisance]]
+A = { builder = "forward.eye", kwargs = { scale = 1.0 } }
+C = { builder = "noise.correlated_paths", kwargs = { corr_length = 5, corr_scale = 0.005 } }
 mu = { builder = "noise.zero_mean", kwargs = {} }
 
 [output]
