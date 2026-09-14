@@ -2170,7 +2170,7 @@ wheels = [
 [[package]]
 name = "raytracer"
 version = "0.1.0"
-source = { git = "https://github.com/auggiemarignier/raytracer.git#28abc4d59576bacc59fafaee12814198135c35fa" }
+source = { git = "https://github.com/auggiemarignier/raytracer.git#bb0d40c65457aa62333c06e211738f48bb3ba02a" }
 dependencies = [
     { name = "numba" },
     { name = "numpy" },
