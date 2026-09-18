@@ -16,9 +16,9 @@ from joblib import Parallel, delayed
 from linear_gaussian import clear_cache
 from tqdm import tqdm
 
+from config.components import RawComponentSpec
 from config.models import (
     ComponentsConfig,
-    ComponentsDict,
     Config,
     DataConfig,
     MeshConfig,
@@ -26,12 +26,13 @@ from config.models import (
 )
 from utils import mem
 
+from ._model_specs import INFERRED, NUISANCE
 from .main import load_data, run
 
 logger = logging.getLogger(__name__)
 
 DATA_CFG = DataConfig(Path("data/brett2024_ic_traveltimes.parquet"))
-DB_PATH = Path("outputs/giant_experiment/ge/runs.db")
+DB_PATH = Path("outputs/giant_experiment/runs.db")
 
 
 @contextmanager
@@ -140,7 +141,7 @@ def insert_result(db_path: Path, run_id: str, name: str, data: Any) -> None:
 
 noise_covar_kwargs = {
     "noise.block_iid": {},
-    "noise.correlated_paths": {"corr_length": 5},
+    "noise.correlated_paths": {"corr_length": 5, "corr_scale": 0.005},
 }
 prior_covar_kwargs = {
     "prior.iid": {"scale": 0.01},
@@ -167,49 +168,16 @@ def record_failure(run_id: str, exc: Exception) -> None:
 def run_job(
     data: np.ndarray,
     context: dict[str, np.ndarray],
-    options: tuple[str, str, str, float, int, int],
+    options: tuple[list[RawComponentSpec], list[RawComponentSpec], int, int],
     run_id: str,
 ) -> None:
     """Main analysis job."""
-    fwd, noise_c, prior_c, ssiak, radres, latres = options
+    inferred, nuisance, radres, latres = options
     mesh_cfg = MeshConfig(radial_resolution=radres, lateral_resolution=latres)
-    output_cfg = OutputConfig("giant_experiment/ge")
-    components: ComponentsDict = {
-        "inferred": [
-            {
-                "A": {"builder": fwd, "kwargs": {"normalisation": 0.5}},
-                "C": {"builder": prior_c, "kwargs": prior_covar_kwargs[prior_c]},
-                "mu": {"builder": "prior.zero_mean", "kwargs": {}},
-            }
-        ],
-        "nuisance": [
-            {
-                "A": {"builder": "forward.eye", "kwargs": {"scale": 1.0}},
-                "C": {"builder": noise_c, "kwargs": noise_covar_kwargs[noise_c]},
-                "mu": {"builder": "noise.zero_mean", "kwargs": {}},
-            }
-        ],
-    }
-    if ssiak != 0.0:
-        components["inferred"].append(
-            {
-                "A": {"builder": "forward.ssi_ak_filter", "kwargs": {"radius": ssiak}},
-                "C": {
-                    "builder": "forward.ssi_ak_bias_cov",
-                    "kwargs": {"scale": 0.05, "radius": ssiak},
-                },
-                "mu": {
-                    "builder": "forward.ssi_ak_bias_mean",
-                    "kwargs": {"radius": ssiak},
-                },
-            }
-        )
-    components_cfg = ComponentsConfig.from_dict(components)
-    dofs_per_cell = 1 if fwd == "forward.build_iso_forward" else 3
+    output_cfg = OutputConfig(str(DB_PATH.parent))
+    components_cfg = ComponentsConfig(inferred, nuisance)
 
-    cfg = Config(
-        DATA_CFG, mesh_cfg, components_cfg, output_cfg, {"dofs_per_cell": dofs_per_cell}
-    )
+    cfg = Config(DATA_CFG, mesh_cfg, components_cfg, output_cfg, {})
     logger.info("Running job %s", run_id)
     _, _, summary, resolved = run(data, context, cfg)
     insert_result(DB_PATH, run_id, "summary", summary)
@@ -217,13 +185,24 @@ def run_job(
     mark_finished(DB_PATH, run_id)
 
 
+def _build_run_id(
+    options: tuple[list[RawComponentSpec], list[RawComponentSpec], int, int],
+) -> str:
+    strs = []
+    for o in options[0] + options[1]:
+        strs.append(o.get("name", ""))
+    for o in options[2:]:
+        strs.append(str(o))
+    return "-".join(strs)
+
+
 def process(
     data: np.ndarray,
     context: dict[str, np.ndarray],
-    options: tuple[str, str, str, float, int, int],
+    options: tuple[list[RawComponentSpec], list[RawComponentSpec], int, int],
 ) -> None:
     """Determine if a job needs to be run.  If so, run it."""
-    run_id = "-".join(str(o) for o in options)
+    run_id = _build_run_id(options)
     try:
         if not try_mark_running(DB_PATH, run_id, options):
             logger.info("Skipping already-run job %s", run_id)
@@ -250,22 +229,12 @@ if __name__ == "__main__":
 
     rad_res = list(range(1, 11))
     lat_res = [1] + list(range(10, 70, 10))
-    forwards = [
-        "forward.build_forward",
-        "forward.build_rti_forward",
-        "forward.build_iso_forward",
-    ]
-    noise_covars = ["noise.block_iid", "noise.correlated_paths"]
-    prior_covars = ["prior.iid", "prior.spherically_correlated"]
-    ssiak_rads = [0.0, 15.0]
 
     ensure_db(DB_PATH)
 
     data, context = load_data(DATA_CFG.file)
 
-    prod = list(
-        product(forwards, noise_covars, prior_covars, ssiak_rads, rad_res, lat_res)
-    )
+    prod = list(product(INFERRED, NUISANCE, rad_res, lat_res))
     p = Parallel(
         n_jobs=os.cpu_count() - 2,
         return_as="generator_unordered",
