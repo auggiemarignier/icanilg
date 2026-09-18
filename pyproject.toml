@@ -15,6 +15,7 @@ dependencies = [
     "cartopy>=0.25.0",
     "scipy>=1.18.0",
     "joblib>=1.5.3",
+    "tqdm>=4.70.0",
 ]
 
 [tool.uv.sources]

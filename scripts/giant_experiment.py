@@ -12,8 +12,10 @@ from itertools import product
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from joblib import Parallel, delayed
 from linear_gaussian import clear_cache
+from tqdm import tqdm
 
 from config.models import (
     ComponentsConfig,
@@ -26,21 +28,7 @@ from config.models import (
 
 from .main import load_data, run
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 logger = logging.getLogger(__name__)
-
-SHARED_DATA = None
-SHARED_CONTEXT = None
-
-
-def _init_worker(data_path: Path) -> None:
-    global SHARED_DATA, SHARED_CONTEXT
-
-    SHARED_DATA, SHARED_CONTEXT = load_data(data_path)
-
 
 DATA_CFG = DataConfig(Path("data/brett2024_ic_traveltimes.parquet"))
 DB_PATH = Path("outputs/giant_experiment/ge/runs.db")
@@ -176,7 +164,12 @@ def record_failure(run_id: str, exc: Exception) -> None:
         logger.exception("Could not record failure: %s", run_id)
 
 
-def run_job(options: tuple[str, str, str, float, int, int], run_id: str) -> None:
+def run_job(
+    data: np.ndarray,
+    context: dict[str, np.ndarray],
+    options: tuple[str, str, str, float, int, int],
+    run_id: str,
+) -> None:
     """Main analysis job."""
     fwd, noise_c, prior_c, ssiak, radres, latres = options
     mesh_cfg = MeshConfig(radial_resolution=radres, lateral_resolution=latres)
@@ -218,13 +211,17 @@ def run_job(options: tuple[str, str, str, float, int, int], run_id: str) -> None
         DATA_CFG, mesh_cfg, components_cfg, output_cfg, {"dofs_per_cell": dofs_per_cell}
     )
     logger.info("Running job %s", run_id)
-    _, _, summary, resolved = run(SHARED_DATA, SHARED_CONTEXT, cfg)
+    _, _, summary, resolved = run(data, context, cfg)
     insert_result(DB_PATH, run_id, "summary", summary)
     insert_result(DB_PATH, run_id, "resolved", resolved)
     mark_finished(DB_PATH, run_id)
 
 
-def process(options: tuple[str, str, str, float, int, int]) -> None:
+def process(
+    data: np.ndarray,
+    context: dict[str, np.ndarray],
+    options: tuple[str, str, str, float, int, int],
+) -> None:
     """Determine if a job needs to be run.  If so, run it."""
     run_id = "-".join(str(o) for o in options)
     try:
@@ -236,14 +233,20 @@ def process(options: tuple[str, str, str, float, int, int]) -> None:
         return
 
     try:
-        run_job(options, run_id)
+        run_job(data, context, options, run_id)
     except Exception as exc:
         record_failure(run_id, exc)
     finally:
         clear_cache()
 
 
+def _disable_worker_logging() -> None:
+    logging.disable(logging.INFO)
+
+
 if __name__ == "__main__":
+    logging.disable(logging.INFO)
+
     rad_res = list(range(1, 11))
     lat_res = [1] + list(range(10, 70, 10))
     forwards = [
@@ -257,10 +260,18 @@ if __name__ == "__main__":
 
     ensure_db(DB_PATH)
 
-    prod = product(forwards, noise_covars, prior_covars, ssiak_rads, rad_res, lat_res)
-    Parallel(
+    data, context = load_data(DATA_CFG.file)
+
+    prod = list(
+        product(forwards, noise_covars, prior_covars, ssiak_rads, rad_res, lat_res)
+    )
+    p = Parallel(
         n_jobs=os.cpu_count() - 2,
-        backend="multiprocessing",
-        initializer=_init_worker,
-        initargs=(str(DATA_CFG.file),),
-    )(delayed(process)(options) for options in prod)
+        return_as="generator_unordered",
+        batch_size=1,
+        initializer=_disable_worker_logging,
+    )
+
+    with tqdm(total=len(prod), desc="Jobs") as progress:
+        for _ in p(delayed(process)(data, context, options) for options in prod):
+            progress.update(1)

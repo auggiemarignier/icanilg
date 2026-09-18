@@ -29,10 +29,6 @@ from config.models import Config, config_to_json_dict
 from utils.distributions import Posterior, PosteriorPredictive
 from utils.forward import construct_ssi_ak_filter
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
@@ -206,4 +202,8 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     main()
