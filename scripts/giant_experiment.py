@@ -86,7 +86,7 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat() + "Z"
 
 
-def try_mark_running(db_path: Path, run_id: str, options: Any) -> bool:
+def try_mark_running(db_path: Path, run_id: str) -> bool:
     """Attempt to insert a run row with status 'running'. Returns True if inserted.
 
     If a row with the same `run_id` already exists, return False.
@@ -95,14 +95,13 @@ def try_mark_running(db_path: Path, run_id: str, options: Any) -> bool:
         with db_connection(db_path) as conn:
             conn.execute(
                 """
-                INSERT INTO runs (run_id, status, started_at, options, pid, host)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO runs (run_id, status, started_at, pid, host)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
                     "running",
                     _now_iso(),
-                    json.dumps(list(options)),
                     os.getpid(),
                     socket.gethostname(),
                 ),
@@ -204,7 +203,7 @@ def process(
     """Determine if a job needs to be run.  If so, run it."""
     run_id = _build_run_id(options)
     try:
-        if not try_mark_running(DB_PATH, run_id, options):
+        if not try_mark_running(DB_PATH, run_id):
             logger.info("Skipping already-run job %s", run_id)
             return
     except Exception:
