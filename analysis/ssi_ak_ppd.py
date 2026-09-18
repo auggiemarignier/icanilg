@@ -37,10 +37,7 @@ def ppd_mahalanobis_ssi_ak(
     m = ppd.mean[np.ix_(filt)]
     cov = ppd.cov[np.ix_(filt, filt)]
 
-    return {
-        "mahalanobis_ssi_ak": _mahalanobis(d, m, cov)
-        / _mahalanobis(ppd.d, ppd.mean, ppd.cov)
-    }
+    return {"mahalanobis_ssi_ak": _mahalanobis(d, m, cov)}
 
 
 def ppd_mahalanobis_ssi_ak_complement(
@@ -52,7 +49,4 @@ def ppd_mahalanobis_ssi_ak_complement(
     m = ppd.mean[np.ix_(filt)]
     cov = ppd.cov[np.ix_(filt, filt)]
 
-    return {
-        "mahalanobis_ssi_ak_comp": _mahalanobis(d, m, cov)
-        / _mahalanobis(ppd.d, ppd.mean, ppd.cov)
-    }
+    return {"mahalanobis_ssi_ak_comp": _mahalanobis(d, m, cov)}
