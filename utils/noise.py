@@ -1,13 +1,24 @@
 """Basic noise models."""
 
+import os
+from pathlib import Path
+
 import numpy as np
+from joblib import Memory
 
 from config.builders import make_builder
 from config.components import register_builder
 
 from .geometry import latlon_to_xyz, pairwise_angular_distance
 
+_cachedir = Path(
+    os.environ.get("ICANILG_CACHE_DIR", Path.home() / ".cache" / "icanilg")
+)
 
+mem = Memory(_cachedir, mmap_mode="r", verbose=0)
+
+
+@mem.cache
 def block_iid(ref_phase: list[str], ic_tt: np.ndarray) -> np.ndarray:
     """
     Taking the hierarchical noise levels reported by Brett et al, 2022.
@@ -38,6 +49,7 @@ def compute_path_similarity(ic_in: np.ndarray, ic_out: np.ndarray) -> np.ndarray
     return np.sqrt(0.5 * (d_EE**2 + d_XX**2))
 
 
+@mem.cache
 def correlated_paths(
     ic_in: np.ndarray,
     ic_out: np.ndarray,

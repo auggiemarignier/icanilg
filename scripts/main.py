@@ -26,6 +26,7 @@ from analysis.ssi_ak_ppd import (
 )
 from config import load_config, save_resolved_config
 from config.models import Config, config_to_json_dict
+from utils import mem
 from utils.distributions import Posterior, PosteriorPredictive
 from utils.forward import construct_ssi_ak_filter
 
@@ -172,6 +173,7 @@ def run(
 
 def main():
     """Run an inversion based on a given config file."""
+    mem.clear(warn=False)
     parser = argparse.ArgumentParser(
         description="Run IC anisotropy inference from a config file"
     )

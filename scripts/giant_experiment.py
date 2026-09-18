@@ -1,5 +1,4 @@
 """Script to loop through a bunch of configurations."""
-
 import json
 import logging
 import os
@@ -25,6 +24,7 @@ from config.models import (
     MeshConfig,
     OutputConfig,
 )
+from utils import mem
 
 from .main import load_data, run
 
@@ -246,6 +246,7 @@ def _disable_worker_logging() -> None:
 
 if __name__ == "__main__":
     logging.disable(logging.INFO)
+    mem.clear(warn=False)
 
     rad_res = list(range(1, 11))
     lat_res = [1] + list(range(10, 70, 10))
