@@ -24,7 +24,7 @@ def block_iid(ref_phase: list[str], ic_tt: np.ndarray) -> np.ndarray:
         "df": 0.95,
     }
     nl = np.array([noise_levels[phase] for phase in ref_phase])
-    return np.diag(nl / ic_tt)
+    return np.diag(nl / ic_tt) ** 2
 
 
 def compute_path_similarity(ic_in: np.ndarray, ic_out: np.ndarray) -> np.ndarray:
