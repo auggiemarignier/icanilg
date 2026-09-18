@@ -303,6 +303,8 @@ def _make_json_compatible(obj: Any) -> Any:
         return {k: _make_json_compatible(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_make_json_compatible(v) for v in obj]
+    if callable(obj):
+        return obj.__name__
     return obj
 
 

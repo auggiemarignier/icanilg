@@ -76,5 +76,11 @@ def make_builder(target: Any) -> Callable[[dict, dict], Any]:
                     )
         return fn(**call_args)
 
-    builder.__name__ = f"builder_for_{fn.__name__}"
+    try:
+        builder.__name__ = f"builder_for_{fn.__name__}"
+    except AttributeError as e:
+        if "partial" in str(e):
+            builder.__name__ = f"builder_for_{fn.func.__name__}"
+        else:
+            raise e
     return builder
