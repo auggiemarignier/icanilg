@@ -14,6 +14,12 @@ def iid(n_params: int, scale: float) -> np.ndarray:
     return np.eye(n_params) * scale
 
 
+def mesh_iid(mesh: SphericalMesh, ndofs: int, scale: float) -> np.ndarray:
+    """IID based on number of mesh sampling points and ndofs per each point."""
+    n_params = mesh.n_cells * ndofs
+    return iid(n_params, scale)
+
+
 def _compute_lateral_covariance_kernel(
     theta: np.ndarray, phi: np.ndarray, phi0: float
 ) -> np.ndarray:
@@ -82,9 +88,14 @@ def spherically_correlated_independent_dofs(
     return np.kron(C_cells, np.eye(ndofs))
 
 
-register_builder("prior.iid", make_builder(iid))
+def zero_mean(mesh: SphericalMesh, ndofs: int) -> np.ndarray:
+    """A vector of zeros of length determined by the mesh and dofs per cell."""
+    return np.zeros(mesh.n_cells * ndofs)
+
+
+register_builder("prior.iid", make_builder(mesh_iid))
 register_builder(
     "prior.spherically_correlated",
     make_builder(spherically_correlated_independent_dofs),
 )
-register_builder("prior.zero_mean", make_builder(lambda n_params: np.zeros(n_params)))
+register_builder("prior.zero_mean", make_builder(zero_mean))
