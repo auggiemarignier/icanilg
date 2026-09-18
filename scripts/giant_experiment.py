@@ -155,9 +155,9 @@ noise_covar_kwargs = {
     "noise.correlated_paths": {"corr_length": 5},
 }
 prior_covar_kwargs = {
-    "prior.iid": {"scale": 0.1},
+    "prior.iid": {"scale": 0.01},
     "prior.spherically_correlated": {
-        "sigma2": 0.1,
+        "sigma2": 0.01,
         "lat_corr_length": 30,
         "rad_corr_length": 300,
     },

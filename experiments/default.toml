@@ -10,7 +10,7 @@ lateral_resolution = 5
 
 [[components.inferred]]
 A = { builder = "forward.build_forward", kwargs = { normalisation = 0.5 } }
-C = { builder = "prior.iid", kwargs = { scale = 0.1} }
+C = { builder = "prior.iid", kwargs = { scale = 0.01} }
 mu = { builder = "prior.zero_mean", kwargs = {} }
 
 [[components.nuisance]]

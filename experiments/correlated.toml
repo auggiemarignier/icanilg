@@ -10,7 +10,7 @@ lateral_resolution = 50
 
 [[components.inferred]]
 A = { builder = "forward.build_forward", kwargs = { normalisation = 0.5 } }
-C = { builder = "prior.spherically_correlated", kwargs = { sigma2 = 0.1, lat_corr_length = 30, rad_corr_length = 300 } }
+C = { builder = "prior.spherically_correlated", kwargs = { sigma2 = 0.01, lat_corr_length = 30, rad_corr_length = 300 } }
 mu = { builder = "prior.zero_mean", kwargs = {} }
 
 [[components.nuisance]]
