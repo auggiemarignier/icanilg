@@ -164,13 +164,21 @@ prior_covar_kwargs = {
 }
 
 
-def process(options: tuple[str, str, str, float, int, int]) -> None:
-    """Configure and run."""
-    run_id = "-".join(str(o) for o in options)
+def record_failure(run_id: str, exc: Exception) -> None:
+    """Mark in the database when something fails.
+
+    If marking in the database fails, just log it.
+    """
+    logger.exception("Run failed: %s", run_id)
+    try:
+        mark_failed(DB_PATH, run_id, str(exc))
+    except Exception:
+        logger.exception("Could not record failure: %s", run_id)
+
+
+def run_job(options: tuple[str, str, str, float, int, int], run_id: str) -> None:
+    """Main analysis job."""
     fwd, noise_c, prior_c, ssiak, radres, latres = options
-    if not try_mark_running(DB_PATH, run_id, options):
-        logger.info("Skipping already-run job %s", run_id)
-        return
     mesh_cfg = MeshConfig(radial_resolution=radres, lateral_resolution=latres)
     output_cfg = OutputConfig("giant_experiment/ge")
     components: ComponentsDict = {
@@ -204,18 +212,33 @@ def process(options: tuple[str, str, str, float, int, int]) -> None:
             }
         )
     components_cfg = ComponentsConfig.from_dict(components)
+    dofs_per_cell = 1 if fwd == "forward.build_iso_forward" else 3
 
-    cfg = Config(DATA_CFG, mesh_cfg, components_cfg, output_cfg, {})
+    cfg = Config(
+        DATA_CFG, mesh_cfg, components_cfg, output_cfg, {"dofs_per_cell": dofs_per_cell}
+    )
+    logger.info("Running job %s", run_id)
+    _, _, summary, resolved = run(SHARED_DATA, SHARED_CONTEXT, cfg)
+    insert_result(DB_PATH, run_id, "summary", summary)
+    insert_result(DB_PATH, run_id, "resolved", resolved)
+    mark_finished(DB_PATH, run_id)
+
+
+def process(options: tuple[str, str, str, float, int, int]) -> None:
+    """Determine if a job needs to be run.  If so, run it."""
+    run_id = "-".join(str(o) for o in options)
     try:
-        logger.info("Running job %s", run_id)
-        _, _, summary, resolved = run(SHARED_DATA, SHARED_CONTEXT, cfg)
-        insert_result(DB_PATH, run_id, "summary", summary)
-        insert_result(DB_PATH, run_id, "resolved", resolved)
-        mark_finished(DB_PATH, run_id)
-    except Exception as e:  # noqa: BLE001 - surface failure in DB
-        mark_failed(DB_PATH, run_id, str(e))
-        logger.exception("Run failed: %s", run_id)
-        raise
+        if not try_mark_running(DB_PATH, run_id, options):
+            logger.info("Skipping already-run job %s", run_id)
+            return
+    except Exception:
+        logger.exception("Failed to mark as running %s", run_id)
+        return
+
+    try:
+        run_job(options, run_id)
+    except Exception as exc:
+        record_failure(run_id, exc)
     finally:
         clear_cache()
 
@@ -236,7 +259,7 @@ if __name__ == "__main__":
 
     prod = product(forwards, noise_covars, prior_covars, ssiak_rads, rad_res, lat_res)
     Parallel(
-        n_jobs=4,
+        n_jobs=os.cpu_count() - 2,
         backend="multiprocessing",
         initializer=_init_worker,
         initargs=(str(DATA_CFG.file),),
