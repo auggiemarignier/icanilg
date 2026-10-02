@@ -16,6 +16,7 @@ dependencies = [
     "scipy>=1.18.0",
     "joblib>=1.5.3",
     "tqdm>=4.70.0",
+    "xarray>=2026.9.0",
 ]
 
 [tool.uv.sources]
