@@ -83,6 +83,11 @@ def _default_ssi_ak_filter(
 ) -> np.ndarray:
     try:
         radius = float(cfg.components.inferred[1]["A"]["kwargs"]["radius"])
+    except TypeError:
+        # e.g. configured as a function in `_model_specs.py`
+        from ._model_specs import SSI_AK_RAD
+
+        radius = SSI_AK_RAD
     except IndexError or KeyError:
         radius = 15.0
     return construct_ssi_ak_filter(turning_point, zeta, radius).sum(axis=1).astype(bool)
@@ -139,7 +144,7 @@ def run(
         context={**context, **local_ctx}
     )
 
-    logger.info("Running inference: n_params=%d", local_ctx["n_params"])
+    logger.info("Running inference")
     posterior = infer_posterior(data, inferred, nuisance)
     logger.info("Posterior covariance shape: %s", posterior.cov.shape)
     logger.info("Posterior mean shape: %s", posterior.mean.shape)
@@ -164,7 +169,7 @@ def run(
         "config": config_to_json_dict(cfg),
         "derived": {
             "n_data": int(context["n_data"]),
-            "n_params": int(local_ctx["n_params"]),
+            "n_params": int(posterior.mean.size),
             "mesh_n_cells": getattr(mesh, "n_cells", None),
         },
     }
