@@ -138,20 +138,6 @@ def insert_result(db_path: Path, run_id: str, name: str, data: Any) -> None:
         )
 
 
-noise_covar_kwargs = {
-    "noise.block_iid": {},
-    "noise.correlated_paths": {"corr_length": 5, "corr_scale": 0.005},
-}
-prior_covar_kwargs = {
-    "prior.iid": {"scale": 0.01},
-    "prior.spherically_correlated": {
-        "sigma2": 0.01,
-        "lat_corr_length": 30,
-        "rad_corr_length": 300,
-    },
-}
-
-
 def record_failure(run_id: str, exc: Exception) -> None:
     """Mark in the database when something fails.
 
@@ -226,8 +212,8 @@ if __name__ == "__main__":
     logging.disable(logging.INFO)
     mem.clear(warn=False)
 
-    rad_res = list(range(1, 11))
-    lat_res = [1] + list(range(10, 70, 10))
+    rad_res = list(range(1, 11)) + [20, 50]
+    lat_res = [1] + list(range(10, 70, 10)) + [100, 150, 200]
 
     ensure_db(DB_PATH)
 
