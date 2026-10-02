@@ -75,7 +75,7 @@ block_iid_noise_spec = compose(
 )
 correlated_paths_spec = compose(
     n_data_eye,
-    make_builder(partial(correlated_paths, corr_length=5, corr_scale=0.005)),
+    make_builder(partial(correlated_paths, corr_length=25, corr_scale=0.005**2)),
     n_data_zeros,
     "correlated_paths",
 )
