@@ -16,8 +16,6 @@ from typing import Any
 
 
 def _resolve_callable(obj: Any) -> Callable:
-    if isinstance(obj, partial):
-        return obj.func
     if callable(obj):
         return obj
     if isinstance(obj, str):
@@ -42,7 +40,8 @@ def make_builder(target: Any) -> Callable[[dict, dict], Any]:
     - Raises ``TypeError`` if a required parameter is missing.
     """
     fn = _resolve_callable(target)
-    sig = inspect.signature(fn)
+    base_fn = fn.func if isinstance(fn, partial) else fn
+    sig = inspect.signature(base_fn)
     params = sig.parameters
     accepts_var_kw = any(
         p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
@@ -59,11 +58,14 @@ def make_builder(target: Any) -> Callable[[dict, dict], Any]:
         kwargs = dict(kwargs or {})
         context = dict(context or {})
 
-        if accepts_var_kw:
-            merged = {**context, **kwargs}
-            return fn(**merged)
+        pre_args = fn.args if isinstance(fn, partial) else ()
+        pre_kwargs = dict(fn.keywords or {}) if isinstance(fn, partial) else {}
 
-        call_args = {}
+        if accepts_var_kw:
+            merged = {**context, **kwargs, **pre_kwargs}
+            return fn(*pre_args, **merged)
+
+        call_args = dict(pre_kwargs)
         for name in named_params:
             if name in kwargs:
                 call_args[name] = kwargs[name]
@@ -71,13 +73,15 @@ def make_builder(target: Any) -> Callable[[dict, dict], Any]:
                 call_args[name] = context[name]
             else:
                 p = params[name]
+                if name in call_args:
+                    continue
                 if p.default is not inspect._empty:
                     call_args[name] = p.default
                 else:
                     raise TypeError(
-                        f"Missing required argument '{name}' for {fn.__name__}"
+                        f"Missing required argument '{name}' for {base_fn.__name__}"
                     )
-        return fn(**call_args)
+        return fn(*pre_args, **call_args)
 
-    builder.__name__ = fn.__name__
+    builder.__name__ = base_fn.__name__
     return builder
