@@ -11,10 +11,13 @@ from __future__ import annotations
 import importlib
 import inspect
 from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 
 def _resolve_callable(obj: Any) -> Callable:
+    if isinstance(obj, partial):
+        return obj.func
     if callable(obj):
         return obj
     if isinstance(obj, str):
@@ -76,11 +79,5 @@ def make_builder(target: Any) -> Callable[[dict, dict], Any]:
                     )
         return fn(**call_args)
 
-    try:
-        builder.__name__ = f"builder_for_{fn.__name__}"
-    except AttributeError as e:
-        if "partial" in str(e):
-            builder.__name__ = f"builder_for_{fn.func.__name__}"
-        else:
-            raise e
+    builder.__name__ = fn.__name__
     return builder
