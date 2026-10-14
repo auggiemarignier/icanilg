@@ -50,7 +50,6 @@ def save_full_outputs(
     """
     from joblib import dump
 
-    outdir.mkdir(parents=True, exist_ok=False)
     dump(posterior, outdir / "posterior.joblib")
     dump(ppd, outdir / "ppd.joblib")
     return outdir
@@ -105,9 +104,9 @@ def infer_posterior(
     d: np.ndarray, inferred: list[GaussianComponent], nuisance: list[GaussianComponent]
 ) -> Posterior:
     """Infer the posterior distribution."""
-    Cp = calc_posterior_cov(inferred, nuisance)
-    mp = calc_posterior_mean(d, inferred, nuisance)
-    Zp = calc_log_evidence(d, inferred, nuisance)
+    Cp = calc_posterior_cov(inferred, nuisance, formulation="data")
+    mp = calc_posterior_mean(d, inferred, nuisance, formulation="data")
+    Zp = calc_log_evidence(d, inferred, nuisance, formulation="data")
     return Posterior(mp, Cp, d, Zp)
 
 
@@ -115,8 +114,8 @@ def infer_ppd(
     d: np.ndarray, inferred: list[GaussianComponent], nuisance: list[GaussianComponent]
 ) -> PosteriorPredictive:
     """Infer the posterior predictive distribution."""
-    C_pred = calc_posterior_predictive_cov(inferred, nuisance)
-    mu_pred = calc_posterior_predictive_mean(d, inferred, nuisance)
+    C_pred = calc_posterior_predictive_cov(inferred, nuisance, formulation="data")
+    mu_pred = calc_posterior_predictive_mean(d, inferred, nuisance, formulation="data")
     return PosteriorPredictive(mu_pred, C_pred, d)
 
 
