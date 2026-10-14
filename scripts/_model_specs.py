@@ -37,13 +37,14 @@ n_data_eye = make_builder(lambda n_data: np.eye(n_data))
 
 SSI_AK_RAD = 15.0
 ssi_ak_filter = make_builder(partial(construct_ssi_ak_filter, radius=SSI_AK_RAD))
-ssi_ak_cov = make_builder(lambda: np.asarray([[0.02]]))
+ssi_ak_cov = make_builder(lambda: np.asarray([[0.02**2]]))
 ssi_ak_mean = make_builder(lambda: np.asarray([0]))
 
 block_iid = make_builder(block_iid)
 correlated_paths = make_builder(
     partial(correlated_paths, corr_length=25, corr_scale=0.005**2)
 )
+
 
 def compose(A: FieldSpec, C: FieldSpec, mu: FieldSpec, name: str) -> RawComponentSpec:
     return {"A": A, "C": C, "mu": mu, "name": name}
