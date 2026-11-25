@@ -1,0 +1,28 @@
+
+[data]
+file = "data/brett2024_ic_traveltimes.parquet"
+
+[mesh]
+radius = 1221.5
+radial_resolution = 4
+lateral_resolution = 50
+
+[components]
+
+[[components.inferred]]
+A = { builder = "forward.build_forward", kwargs = { normalisation = 0.5 } }
+C = { builder = "prior.spherically_correlated", kwargs = { sigma2 = 0.01, lat_corr_length = 30, rad_corr_length = 300 } }
+mu = { builder = "prior.zero_mean", kwargs = { ndofs = 3} }
+
+[[components.nuisance]]
+A = { builder = "forward.eye", kwargs = { scale = 1.0 } }
+C = { builder = "noise.block_iid" }
+mu = { builder = "noise.zero_mean", kwargs = {} }
+
+[[components.nuisance]]
+A = { builder = "forward.eye", kwargs = { scale = 1.0 } }
+C = { builder = "noise.correlated_paths", kwargs = { corr_length = 21, corr_scale = 0.000025 } }
+mu = { builder = "noise.zero_mean", kwargs = {} }
+
+[output]
+prefix = "outputs/correlated"
